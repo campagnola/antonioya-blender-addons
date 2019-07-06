@@ -46,7 +46,10 @@ SVGUnits = {"": 1.0,
             }
 
 SVGEmptyStyles = {'useFill': None,
-                  'fill': None}
+                  'fill': None,
+                  'useStroke': None,
+                  'stroke': None,
+                  'thickness': None}
 
 def SVGParseFloat(s, i=0):
     """
@@ -265,7 +268,7 @@ def SVGParseTransform(transform):
     return m
 
 
-def SVGGetMaterial(color, context):
+def SVGGetMaterial(matname, color, context):
     """
     Get material for specified color
     """
@@ -299,7 +302,7 @@ def SVGGetMaterial(color, context):
         diffuse_color[1] = srgb_to_linearrgb(diffuse_color[1])
         diffuse_color[2] = srgb_to_linearrgb(diffuse_color[2])
 
-    mat = bpy.data.materials.new(name='SVGMat')
+    mat = bpy.data.materials.new(name=matname)
     mat.diffuse_color = (*diffuse_color, 1.0)
 
     materials[color] = mat
@@ -427,11 +430,16 @@ def SVGParseStyles(node, context):
                     styles['useFill'] = False
                 else:
                     styles['useFill'] = True
-                    styles['fill'] = SVGGetMaterial(val, context)
+                    styles['fill'] = SVGGetMaterial('SVGMat', val, context)
+
+            if name == 'stroke':
+                styles['useStroke'] = True
+                val = val.lower()
+                styles['stroke'] = SVGGetMaterial('SVGMat_b', val, context)
 
         if styles['useFill'] is None:
             styles['useFill'] = True
-            styles['fill'] = SVGGetMaterial('#000', context)
+            styles['fill'] = SVGGetMaterial('SVGMat', '#000', context)
 
         return styles
 
@@ -443,14 +451,19 @@ def SVGParseStyles(node, context):
                 styles['useFill'] = False
             else:
                 styles['useFill'] = True
-                styles['fill'] = SVGGetMaterial(fill, context)
+                styles['fill'] = SVGGetMaterial('SVGMat', fill, context)
+
+    if styles['useStroke'] is None:
+        stroke = node.getAttribute('stroke')
+        if stroke:
+            styles['useStroke'] = True
 
     if styles['useFill'] is None and context['style']:
         styles = context['style'].copy()
 
     if styles['useFill'] is None:
         styles['useFill'] = True
-        styles['fill'] = SVGGetMaterial('#000', context)
+        styles['fill'] = SVGGetMaterial('SVGMat', '#000', context)
 
     return styles
 
@@ -1229,6 +1242,9 @@ class SVGGeometryPATH(SVGGeometry):
         else:
             cu.dimensions = '3D'
 
+        if self._styles['useStroke']:
+            cu.materials.append(self._styles['stroke'])
+
         for spline in self._splines:
             act_spline = None
 
@@ -1458,6 +1474,9 @@ class SVGGeometryRECT(SVGGeometry):
         else:
             cu.dimensions = '3D'
 
+        if self._styles['useStroke']:
+            cu.materials.append(self._styles['stroke'])
+
         cu.splines.new('BEZIER')
 
         spline = cu.splines[-1]
@@ -1570,6 +1589,9 @@ class SVGGeometryELLIPSE(SVGGeometry):
             cu.materials.append(self._styles['fill'])
         else:
             cu.dimensions = '3D'
+
+        if self._styles['useStroke']:
+            cu.materials.append(self._styles['stroke'])
 
         coords = [((cx - rx, cy),
                    (cx - rx, cy + ry * 0.552),
