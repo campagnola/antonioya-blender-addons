@@ -40,7 +40,8 @@ if "bpy" in locals():
 
 
 import bpy
-from bpy.props import StringProperty
+from bpy.props import (StringProperty,
+                       BoolProperty)
 from bpy_extras.io_utils import ImportHelper
 
 
@@ -52,11 +53,21 @@ class ImportSVG(bpy.types.Operator, ImportHelper):
 
     filename_ext = ".svg"
     filter_glob: StringProperty(default="*.svg", options={'HIDDEN'})
-
+    use_collections: BoolProperty(
+        name="Layers as Collections",
+        description="Seaparate SVG layers as collections",
+        default=True,
+    )
     def execute(self, context):
         from . import import_svg
 
         return import_svg.load(self, context, filepath=self.filepath)
+
+    def draw(self, context):
+        layout = self.layout
+
+        row = layout.row(align=True)
+        row.prop(self, "use_collections")
 
 
 def menu_func_import(self, context):

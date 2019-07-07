@@ -1880,7 +1880,7 @@ class SVGLoader(SVGGeometryContainer):
 
         return None
 
-    def __init__(self, context, filepath, do_colormanage):
+    def __init__(self, context, filepath, do_colormanage, use_collections):
         """
         Initialize SVG loader
         """
@@ -1909,6 +1909,7 @@ class SVGLoader(SVGGeometryContainer):
                          'style': None,
                          'do_colormanage': do_colormanage,
                          'collection': collection,
+                         'use_collections': use_collections,
                          'inkscape': False,
                          'layer': None,
                          'prev_layer': None}
@@ -1952,7 +1953,7 @@ def parseAbstractNode(node, context):
             layer = node.getAttribute('id')
 
         # Create a collection by SVG layer
-        if layer:
+        if layer and context['use_collections']:
             context['layer'] = layer
             if layer != context['prev_layer']:
                 context['prev_layer'] = layer
@@ -1969,7 +1970,7 @@ def parseAbstractNode(node, context):
     return None
 
 
-def load_svg(context, filepath, do_colormanage):
+def load_svg(context, filepath, do_colormanage, use_collections):
     """
     Load specified SVG file
     """
@@ -1977,18 +1978,17 @@ def load_svg(context, filepath, do_colormanage):
     if bpy.ops.object.mode_set.poll():
         bpy.ops.object.mode_set(mode='OBJECT')
 
-    loader = SVGLoader(context, filepath, do_colormanage)
+    loader = SVGLoader(context, filepath, do_colormanage, use_collections)
     loader.parse()
     loader.createGeom(False)
 
 
 def load(operator, context, filepath=""):
-
     # error in code should raise exceptions but loading
     # non SVG files can give useful messages.
     do_colormanage = context.scene.display_settings.display_device != 'NONE'
     try:
-        load_svg(context, filepath, do_colormanage)
+        load_svg(context, filepath, do_colormanage, operator.use_collections)
     except (xml.parsers.expat.ExpatError, UnicodeEncodeError) as e:
         import traceback
         traceback.print_exc()
