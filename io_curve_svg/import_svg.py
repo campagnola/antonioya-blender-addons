@@ -439,7 +439,10 @@ def SVGParseStyles(node, context):
             if name == 'stroke':
                 styles['useStroke'] = True
                 val = val.lower()
-                styles['stroke'] = SVGGetMaterial('SVGMat_b', val, context)
+                if val != 'none':
+                    styles['stroke'] = SVGGetMaterial('SVGMat_stroke', val, context)
+                else:
+                    styles['stroke'] = None
 
         if styles['useFill'] is None:
             styles['useFill'] = True
@@ -456,11 +459,6 @@ def SVGParseStyles(node, context):
             else:
                 styles['useFill'] = True
                 styles['fill'] = SVGGetMaterial('SVGMat', fill, context)
-
-    if styles['useStroke'] is None:
-        stroke = node.getAttribute('stroke')
-        if stroke:
-            styles['useStroke'] = True
 
     if styles['useFill'] is None and context['style']:
         styles = context['style'].copy()
@@ -1255,7 +1253,8 @@ class SVGGeometryPATH(SVGGeometry):
             cu.dimensions = '3D'
 
         if self._styles['useStroke']:
-            cu.materials.append(self._styles['stroke'])
+            if self._styles['stroke'] != None and self._styles['stroke'] != 'none':
+                cu.materials.append(self._styles['stroke'])
 
         for spline in self._splines:
             act_spline = None
