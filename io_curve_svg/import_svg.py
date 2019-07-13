@@ -444,6 +444,9 @@ def SVGParseStyles(node, context):
                 else:
                     styles['stroke'] = None
 
+            if name == 'stroke-width':
+                styles['thickness'] = val
+
         if styles['useFill'] is None:
             styles['useFill'] = True
             styles['fill'] = SVGGetMaterial('SVGMat', '#000', context)
@@ -1284,6 +1287,11 @@ class SVGGeometryPATH(SVGGeometry):
 
                 bezt = act_spline.bezier_points[-1]
                 bezt.co = co
+                # Move the thickness from style
+                if self._styles['thickness'] != None:
+                    bezt.radius = float(self._styles['thickness'])
+                if bezt.radius < 1.0:
+                    bezt.radius = 1.0
 
                 bezt.handle_left_type = point['handle_left_type']
                 if point['handle_left'] is not None:
