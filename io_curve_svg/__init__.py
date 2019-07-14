@@ -58,6 +58,13 @@ class ImportSVG(bpy.types.Operator, ImportHelper):
         description="Seaparate SVG layers as collections",
         default=True,
     )
+
+    use_gpencil: BoolProperty(
+        name="Convert to Grease Pencil",
+        description="Convert to grease pencil strokes",
+        default=False,
+    )
+
     def execute(self, context):
         from . import import_svg
 
@@ -68,6 +75,8 @@ class ImportSVG(bpy.types.Operator, ImportHelper):
 
         row = layout.row(align=True)
         row.prop(self, "use_collections")
+        row = layout.row(align=True)
+        row.prop(self, "use_gpencil")
 
 
 def menu_func_import(self, context):

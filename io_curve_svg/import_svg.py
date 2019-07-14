@@ -125,6 +125,9 @@ def SVGCreateCurve(context, layer):
     cu = bpy.data.curves.new("Curve", 'CURVE')
     obj = bpy.data.objects.new("Curve", cu)
 
+    # Save the curve object to get the list of objects created
+    context['curves'].append(obj)
+
     sub_collection = bpy.data.collections[layer]
     if sub_collection:
         sub_collection.objects.link(obj)
@@ -445,7 +448,8 @@ def SVGParseStyles(node, context):
                     styles['stroke'] = None
 
             if name == 'stroke-width':
-                styles['thickness'] = val
+                number, last_char = SVGParseFloat(val)
+                styles['thickness'] = float(number)
 
         if styles['useFill'] is None:
             styles['useFill'] = True
@@ -1290,8 +1294,6 @@ class SVGGeometryPATH(SVGGeometry):
                 # Move the thickness from style
                 if self._styles['thickness'] != None:
                     bezt.radius = float(self._styles['thickness'])
-                if bezt.radius < 1.0:
-                    bezt.radius = 1.0
 
                 bezt.handle_left_type = point['handle_left_type']
                 if point['handle_left'] is not None:
@@ -1894,6 +1896,7 @@ class SVGLoader(SVGGeometryContainer):
         """
         import os
 
+        active_collection = bpy.context.view_layer.active_layer_collection
         svg_name = os.path.basename(filepath)
         scene = context.scene
         collection = bpy.data.collections.new(name=svg_name)
@@ -1907,7 +1910,9 @@ class SVGLoader(SVGGeometryContainer):
 
         rect = (0, 0)
 
-        self._context = {'defines': {},
+        self._context = {'svg': svg_name,
+                         'active_collection': active_collection,
+                         'defines': {},
                          'transform': [],
                          'rects': [rect],
                          'rect': rect,
@@ -1918,6 +1923,7 @@ class SVGLoader(SVGGeometryContainer):
                          'do_colormanage': do_colormanage,
                          'collection': collection,
                          'use_collections': use_collections,
+                         'curves': [None],
                          'inkscape': False,
                          'layer': None,
                          'prev_layer': None}
@@ -1977,8 +1983,49 @@ def parseAbstractNode(node, context):
 
     return None
 
+def delete_curve_object(ob):
+    if ob is None:
+        return
 
-def load_svg(context, filepath, do_colormanage, use_collections):
+    # Clear materials
+    for slot in ob.material_slots:
+        ma = slot.material
+        if ma and ma.users == 1:
+            bpy.data.materials.remove(ma)
+            
+    # Delete Object
+    bpy.data.objects.remove(ob)
+
+    # Delete Curves
+    for cu in bpy.data.curves:
+        if cu and cu.users == 0:
+            bpy.data.curves.remove(cu)
+
+def create_gpencil(context):
+    # Add a new grease pencil object and link to active collection
+    svg_name = context['svg']
+    main_name = svg_name[: -4]
+    gpd = bpy.data.grease_pencils.new(main_name)
+    ob_gp = bpy.data.objects.new(main_name, gpd)
+    active_collection = context['active_collection'].name
+    bpy.data.collections[active_collection].objects.link(ob_gp)
+
+    # Generate strokes for each curve
+    for ob_cu in context['curves']:
+        if ob_cu:
+            ob_cu.generate_gpencil_strokes(ob_gp, gpencil_lines=True, use_collections=True)
+            # Remove temporary curve objects 
+            delete_curve_object(ob_cu)
+
+    # Remove all collections created, first all childs and finally the main one
+    collection = bpy.data.collections[context['svg']]
+    for child in collection.children:
+        bpy.data.collections.remove(child)
+
+    bpy.data.collections.remove(collection)
+
+
+def load_svg(context, filepath, do_colormanage, use_collections, use_gpencil):
     """
     Load specified SVG file
     """
@@ -1990,13 +2037,15 @@ def load_svg(context, filepath, do_colormanage, use_collections):
     loader.parse()
     loader.createGeom(False)
 
+    if use_gpencil:
+        create_gpencil(loader._context)
 
 def load(operator, context, filepath=""):
     # error in code should raise exceptions but loading
     # non SVG files can give useful messages.
     do_colormanage = context.scene.display_settings.display_device != 'NONE'
     try:
-        load_svg(context, filepath, do_colormanage, operator.use_collections)
+        load_svg(context, filepath, do_colormanage, operator.use_collections, operator.use_gpencil)
     except (xml.parsers.expat.ExpatError, UnicodeEncodeError) as e:
         import traceback
         traceback.print_exc()
