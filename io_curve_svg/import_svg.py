@@ -2013,7 +2013,7 @@ def create_gpencil(context):
     # Generate strokes for each curve
     for ob_cu in context['curves']:
         if ob_cu:
-            ob_cu.generate_gpencil_strokes(ob_gp, gpencil_lines=False, use_collections=True)
+            ob_cu.generate_gpencil_strokes(ob_gp)
             # Remove temporary curve objects 
             delete_curve_object(ob_cu)
 
