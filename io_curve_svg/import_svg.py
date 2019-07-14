@@ -1438,6 +1438,9 @@ class SVGGeometryRECT(SVGGeometry):
 
         bezt = spline.bezier_points[-1]
         bezt.co = co
+        # Move the thickness from style
+        if self._styles['thickness'] != None:
+            bezt.radius = float(self._styles['thickness'])
 
         if rounded:
             if handle:
@@ -1649,6 +1652,9 @@ class SVGGeometryELLIPSE(SVGGeometry):
             bezt.handle_right_type = 'FREE'
             bezt.handle_left = handle_left
             bezt.handle_right = handle_right
+            # Move the thickness from style
+            if self._styles['thickness'] != None:
+                bezt.radius = float(self._styles['thickness'])
 
         SVGFinishCurve()
 
@@ -1741,6 +1747,9 @@ class SVGGeometryLINE(SVGGeometry):
             bezt.co = co
             bezt.handle_left_type = 'VECTOR'
             bezt.handle_right_type = 'VECTOR'
+            # Move the thickness from style
+            if self._styles['thickness'] != None:
+                bezt.radius = float(self._styles['thickness'])
 
         SVGFinishCurve()
 
@@ -1818,6 +1827,9 @@ class SVGGeometryPOLY(SVGGeometry):
             bezt.co = co
             bezt.handle_left_type = 'VECTOR'
             bezt.handle_right_type = 'VECTOR'
+            # Move the thickness from style
+            if self._styles['thickness'] != None:
+                bezt.radius = float(self._styles['thickness'])
 
         SVGFinishCurve()
 
