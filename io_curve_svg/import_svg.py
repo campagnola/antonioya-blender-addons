@@ -456,6 +456,31 @@ def SVGParseStyles(node, context):
             styles['fill'] = SVGGetMaterial('SVGMat', '#000', context)
 
         return styles
+    else:
+        # Some SVG files do not use styles but direct definition of colors
+        fill = node.getAttribute('fill') or 'none'
+        stroke = node.getAttribute('stroke') or 'none'
+        thickness = node.getAttribute('stroke-width') or 'none'
+
+        if fill:
+            val = fill.lower()
+            if val == 'none':
+                styles['useFill'] = False
+            else:
+                styles['useFill'] = True
+                styles['fill'] = SVGGetMaterial('SVGMat', val, context)
+        if stroke:
+            styles['useStroke'] = True
+            val = stroke.lower()
+            if val != 'none':
+                styles['stroke'] = SVGGetMaterial('SVGMat_stroke', val, context)
+            else:
+                styles['stroke'] = None
+
+        if thickness and thickness != 'none':
+            number, last_char = SVGParseFloat(thickness)
+            styles['thickness'] = float(number)
+
 
     if styles['useFill'] is None:
         fill = node.getAttribute('fill')
@@ -1686,7 +1711,8 @@ class SVGGeometryLINE(SVGGeometry):
     __slots__ = ('_x1',  # X-coordinate of beginning
                  '_y1',  # Y-coordinate of beginning
                  '_x2',  # X-coordinate of ending
-                 '_y2')  # Y-coordinate of ending
+                 '_y2',  # Y-coordinate of ending
+                 '_styles')  # Styles, used for displaying
 
     def __init__(self, node, context):
         """
@@ -1699,11 +1725,13 @@ class SVGGeometryLINE(SVGGeometry):
         self._y1 = '0.0'
         self._x2 = '0.0'
         self._y2 = '0.0'
+        self._styles = SVGEmptyStyles
 
     def parse(self):
         """
         Parse SVG line node
         """
+        self._styles = SVGParseStyles(self._node, self._context)
 
         self._x1 = self._node.getAttribute('x1') or '0'
         self._y1 = self._node.getAttribute('y1') or '0'
