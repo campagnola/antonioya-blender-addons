@@ -476,11 +476,9 @@ def SVGParseStyles(node, context):
                 styles['stroke'] = SVGGetMaterial('SVGMat_stroke', val, context)
             else:
                 styles['stroke'] = None
-
         if thickness and thickness != 'none':
             number, last_char = SVGParseFloat(thickness)
             styles['thickness'] = float(number)
-
 
     if styles['useFill'] is None:
         fill = node.getAttribute('fill')
