@@ -49,7 +49,9 @@ SVGEmptyStyles = {'useFill': None,
                   'fill': None,
                   'useStroke': None,
                   'stroke': None,
-                  'thickness': None}
+                  'thickness': None,
+                  'fill_opacity': None,
+                  'stroke_opacity': None}
 
 def SVGParseFloat(s, i=0):
     """
@@ -451,6 +453,20 @@ def SVGParseStyles(node, context):
                 number, last_char = SVGParseFloat(val)
                 styles['thickness'] = float(number)
 
+            if name == 'fill-opacity':
+                number, last_char = SVGParseFloat(val)
+                styles['fill_opacity'] = float(number)
+                mat = styles['fill']
+                if mat:
+                    mat.diffuse_color[3] = float(number)
+
+            if name == 'stroke-opacity':
+                number, last_char = SVGParseFloat(val)
+                styles['stroke_opacity'] = float(number)
+                mat = styles['stroke']
+                if mat:
+                    mat.diffuse_color[3] = float(number)
+
         if styles['useFill'] is None:
             styles['useFill'] = True
             styles['fill'] = SVGGetMaterial('SVGMat', '#000', context)
@@ -461,6 +477,8 @@ def SVGParseStyles(node, context):
         fill = node.getAttribute('fill') or 'none'
         stroke = node.getAttribute('stroke') or 'none'
         thickness = node.getAttribute('stroke-width') or 'none'
+        fill_opacity = node.getAttribute('fill-opacity') or 'none'
+        stroke_opacity = node.getAttribute('stroke-opacity') or 'none'
 
         if fill:
             val = fill.lower()
@@ -479,6 +497,20 @@ def SVGParseStyles(node, context):
         if thickness and thickness != 'none':
             number, last_char = SVGParseFloat(thickness)
             styles['thickness'] = float(number)
+
+        if fill_opacity and fill_opacity != 'none':
+            number, last_char = SVGParseFloat(fill_opacity)
+            styles['fill_opacity'] = float(number)
+            mat = styles['fill']
+            if mat:
+                mat.diffuse_color[3] = float(number)
+            
+        if stroke_opacity and stroke_opacity != 'none':
+            number, last_char = SVGParseFloat(stroke_opacity)
+            styles['stroke_opacity'] = float(number)
+            mat = styles['stroke']
+            if mat:
+                mat.diffuse_color[3] = float(number)
 
     if styles['useFill'] is None:
         fill = node.getAttribute('fill')
