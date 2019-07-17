@@ -49,9 +49,7 @@ SVGEmptyStyles = {'useFill': None,
                   'fill': None,
                   'useStroke': None,
                   'stroke': None,
-                  'thickness': None,
-                  'fill_opacity': None,
-                  'stroke_opacity': None}
+                  'thickness': None}
 
 def SVGParseFloat(s, i=0):
     """
@@ -455,14 +453,12 @@ def SVGParseStyles(node, context):
 
             if name == 'fill-opacity':
                 number, last_char = SVGParseFloat(val)
-                styles['fill_opacity'] = float(number)
                 mat = styles['fill']
                 if mat:
                     mat.diffuse_color[3] = float(number)
 
             if name == 'stroke-opacity':
                 number, last_char = SVGParseFloat(val)
-                styles['stroke_opacity'] = float(number)
                 mat = styles['stroke']
                 if mat:
                     mat.diffuse_color[3] = float(number)
@@ -500,14 +496,12 @@ def SVGParseStyles(node, context):
 
         if fill_opacity and fill_opacity != 'none':
             number, last_char = SVGParseFloat(fill_opacity)
-            styles['fill_opacity'] = float(number)
             mat = styles['fill']
             if mat:
                 mat.diffuse_color[3] = float(number)
             
         if stroke_opacity and stroke_opacity != 'none':
             number, last_char = SVGParseFloat(stroke_opacity)
-            styles['stroke_opacity'] = float(number)
             mat = styles['stroke']
             if mat:
                 mat.diffuse_color[3] = float(number)
