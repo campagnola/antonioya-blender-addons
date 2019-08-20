@@ -2089,7 +2089,7 @@ def create_gpencil(context):
     bpy.data.collections.remove(collection)
 
 
-def load_svg(context, filepath, do_colormanage, use_collections, use_gpencil):
+def load_svg(context, filepath, do_colormanage, use_collections, target):
     """
     Load specified SVG file
     """
@@ -2101,7 +2101,7 @@ def load_svg(context, filepath, do_colormanage, use_collections, use_gpencil):
     loader.parse()
     loader.createGeom(False)
 
-    if use_gpencil:
+    if target == 'GPENCIL':
         create_gpencil(loader._context)
 
 def load(operator, context, filepath=""):
@@ -2115,7 +2115,7 @@ def load(operator, context, filepath=""):
             operator.report({'WARNING'}, "No Collection active. Active one before importing SVG")
             return {'CANCELLED'}            
 
-        load_svg(context, filepath, do_colormanage, operator.use_collections, operator.use_gpencil)
+        load_svg(context, filepath, do_colormanage, operator.use_collections, operator.target)
     except (xml.parsers.expat.ExpatError, UnicodeEncodeError) as e:
         import traceback
         traceback.print_exc()

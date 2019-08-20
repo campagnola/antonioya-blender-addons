@@ -41,7 +41,8 @@ if "bpy" in locals():
 
 import bpy
 from bpy.props import (StringProperty,
-                       BoolProperty)
+                       BoolProperty,
+                       EnumProperty)
 from bpy_extras.io_utils import ImportHelper
 
 
@@ -59,11 +60,10 @@ class ImportSVG(bpy.types.Operator, ImportHelper):
         default=True,
     )
 
-    use_gpencil: BoolProperty(
-        name="Convert to Grease Pencil",
-        description="Convert to grease pencil strokes",
-        default=False,
-    )
+    target: EnumProperty(items=(('GPENCIL', "Grease Pencil Strokes", "Import as Grease Pencil Strokes"),
+                                     ('CURVE', "Curves", "Import as Curves")),
+                                     name="Target",
+                                     description="Target type")
 
     def execute(self, context):
         from . import import_svg
@@ -76,7 +76,7 @@ class ImportSVG(bpy.types.Operator, ImportHelper):
         row = layout.row(align=True)
         row.prop(self, "use_collections")
         row = layout.row(align=True)
-        row.prop(self, "use_gpencil")
+        row.prop(self, "target")
 
 
 def menu_func_import(self, context):
