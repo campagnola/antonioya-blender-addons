@@ -54,16 +54,17 @@ class ImportSVG(bpy.types.Operator, ImportHelper):
 
     filename_ext = ".svg"
     filter_glob: StringProperty(default="*.svg", options={'HIDDEN'})
-    use_collections: BoolProperty(
-        name="Layers as Collections",
-        description="Seaparate SVG layers as collections",
-        default=True,
-    )
 
     target: EnumProperty(items=(('GPENCIL', "Grease Pencil Strokes", "Import as Grease Pencil Strokes"),
                                      ('CURVE', "Curves", "Import as Curves")),
                                      name="Target",
                                      description="Target type")
+
+    use_collections: BoolProperty(
+        name="Layers as Collections",
+        description="Seaparate SVG layers as collections",
+        default=True,
+    )
 
     def execute(self, context):
         from . import import_svg
@@ -74,9 +75,9 @@ class ImportSVG(bpy.types.Operator, ImportHelper):
         layout = self.layout
 
         row = layout.row(align=True)
-        row.prop(self, "use_collections")
-        row = layout.row(align=True)
         row.prop(self, "target")
+        row = layout.row(align=True)
+        row.prop(self, "use_collections")
 
 
 def menu_func_import(self, context):
