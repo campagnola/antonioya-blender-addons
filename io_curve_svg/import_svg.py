@@ -2109,6 +2109,12 @@ def load(operator, context, filepath=""):
     # non SVG files can give useful messages.
     do_colormanage = context.scene.display_settings.display_device != 'NONE'
     try:
+        # Check we have one Collection
+        active_collection = bpy.context.view_layer.active_layer_collection
+        if active_collection is None or active_collection.name == 'Master Collection':
+            operator.report({'WARNING'}, "No Collection active. Active one before importing SVG")
+            return {'CANCELLED'}            
+
         load_svg(context, filepath, do_colormanage, operator.use_collections, operator.use_gpencil)
     except (xml.parsers.expat.ExpatError, UnicodeEncodeError) as e:
         import traceback
