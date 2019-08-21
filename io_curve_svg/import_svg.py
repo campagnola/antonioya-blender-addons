@@ -49,7 +49,8 @@ SVGEmptyClasses = {'clskey': None,
                   'fill': None,
                   'stroke': None,
                   'fill-opacity': None,
-                  'stroke-opacity': None}
+                  'stroke-opacity': None,
+                  'thickness': None}
 
 
 SVGEmptyStyles = {'useFill': None,
@@ -425,10 +426,27 @@ def SVGParseStyles(node, context):
     """
     styles = SVGEmptyStyles.copy()
 
+    fill = None
+    stroke = None
+    thickness = None
+    fill_opacity = None
+    stroke_opacity = None
+
     cla = node.getAttribute('class')
     style = node.getAttribute('style')
     if cla:
-        print("Hay clase")
+        for c in context['classes']:
+            if c is None:
+                continue
+            # Find this style    
+            if (c['clskey'] == cla):    
+                fill = c['fill']
+                thickness = c['thickness']
+                stroke = c['stroke']
+                fill_opacity = c['fill-opacity']
+                stroke_opacity = c['stroke-opacity']
+                break
+                
     elif style:
         elems = style.split(';')
         for elem in elems:
@@ -442,41 +460,23 @@ def SVGParseStyles(node, context):
 
             if name == 'fill':
                 val = val.lower()
-                if val == 'none':
-                    styles['useFill'] = False
-                else:
-                    styles['useFill'] = True
-                    styles['fill'] = SVGGetMaterial('SVGMat', val, context)
+                fill = val
 
             if name == 'stroke':
-                styles['useStroke'] = True
                 val = val.lower()
-                if val != 'none':
-                    styles['stroke'] = SVGGetMaterial('SVGMat_stroke', val, context)
-                else:
-                    styles['stroke'] = None
+                stroke = val
 
             if name == 'stroke-width':
                 number, last_char = SVGParseFloat(val)
-                styles['thickness'] = float(number)
+                thickness = float(number)
 
             if name == 'fill-opacity':
                 number, last_char = SVGParseFloat(val)
-                mat = styles['fill']
-                if mat:
-                    mat.diffuse_color[3] = float(number)
+                fill_opacity = float(number)
 
             if name == 'stroke-opacity':
                 number, last_char = SVGParseFloat(val)
-                mat = styles['stroke']
-                if mat:
-                    mat.diffuse_color[3] = float(number)
-
-        if styles['useFill'] is None:
-            styles['useFill'] = True
-            styles['fill'] = SVGGetMaterial('SVGMat', '#000', context)
-
-        return styles
+                stroke_opacity = float(number)
     else:
         # Some SVG files do not use styles but direct definition of colors
         fill = node.getAttribute('fill') or 'none'
@@ -485,35 +485,36 @@ def SVGParseStyles(node, context):
         fill_opacity = node.getAttribute('fill-opacity') or 'none'
         stroke_opacity = node.getAttribute('stroke-opacity') or 'none'
 
-        if fill:
-            val = fill.lower()
-            if val == 'none':
-                styles['useFill'] = False
-            else:
-                styles['useFill'] = True
-                styles['fill'] = SVGGetMaterial('SVGMat', val, context)
-        if stroke:
-            styles['useStroke'] = True
-            val = stroke.lower()
-            if val != 'none':
-                styles['stroke'] = SVGGetMaterial('SVGMat_stroke', val, context)
-            else:
-                styles['stroke'] = None
-        if thickness and thickness != 'none':
-            number, last_char = SVGParseFloat(thickness)
-            styles['thickness'] = float(number)
+    # Process data and save
+    if fill:
+        val = fill.lower()
+        if val == 'none':
+            styles['useFill'] = False
+        else:
+            styles['useFill'] = True
+            styles['fill'] = SVGGetMaterial('SVGMat', val, context)
+    if stroke:
+        styles['useStroke'] = True
+        val = stroke.lower()
+        if val != 'none':
+            styles['stroke'] = SVGGetMaterial('SVGMat_stroke', val, context)
+        else:
+            styles['stroke'] = None
+    if thickness and thickness != 'none':
+        number, last_char = SVGParseFloat(thickness)
+        styles['thickness'] = float(number)
 
-        if fill_opacity and fill_opacity != 'none':
-            number, last_char = SVGParseFloat(fill_opacity)
-            mat = styles['fill']
-            if mat:
-                mat.diffuse_color[3] = float(number)
-            
-        if stroke_opacity and stroke_opacity != 'none':
-            number, last_char = SVGParseFloat(stroke_opacity)
-            mat = styles['stroke']
-            if mat:
-                mat.diffuse_color[3] = float(number)
+    if fill_opacity and fill_opacity != 'none':
+        number, last_char = SVGParseFloat(fill_opacity)
+        mat = styles['fill']
+        if mat:
+            mat.diffuse_color[3] = float(number)
+        
+    if stroke_opacity and stroke_opacity != 'none':
+        number, last_char = SVGParseFloat(stroke_opacity)
+        mat = styles['stroke']
+        if mat:
+            mat.diffuse_color[3] = float(number)
 
     if styles['useFill'] is None:
         fill = node.getAttribute('fill')
@@ -1993,6 +1994,10 @@ class SVGGeometryCLASTYLE(SVGGeometryContainer):
                     if name == 'stroke-opacity':
                         number, last_char = SVGParseFloat(val)
                         cla['stroke-opacity'] = float(number)
+
+                    if name == 'stroke-width':
+                        number, last_char = SVGParseFloat(val)
+                        styles['thickness'] = float(number)
 
                 context['classes'].append(cla)
 
