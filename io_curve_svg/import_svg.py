@@ -47,10 +47,12 @@ SVGUnits = {"": 1.0,
 
 SVGEmptyClasses = {'clskey': None,
                   'fill': None,
+                  'fill-end': None,
                   'stroke': None,
                   'fill-opacity': None,
                   'stroke-opacity': None,
-                  'thickness': None}
+                  'thickness': None,
+                  'rotation': None}
 
 
 SVGEmptyStyles = {'useFill': None,
@@ -418,6 +420,15 @@ SVGTransforms = {'translate': SVGTransformTranslate,
                  'matrix': SVGTransformMatrix,
                  'rotate': SVGTransformRotate}
 
+def get_style_from_class(context, cla):
+    for c in context['classes']:
+        if c is None:
+            continue
+        # Find this style    
+        if (c['clskey'] == cla):    
+            return c
+
+    return None
 
 def SVGParseStyles(node, context):
     """
@@ -427,6 +438,7 @@ def SVGParseStyles(node, context):
     styles = SVGEmptyStyles.copy()
 
     fill = None
+    fill_end = None
     stroke = None
     thickness = None
     fill_opacity = None
@@ -435,17 +447,18 @@ def SVGParseStyles(node, context):
     cla = node.getAttribute('class')
     style = node.getAttribute('style')
     if cla:
-        for c in context['classes']:
-            if c is None:
-                continue
-            # Find this style    
-            if (c['clskey'] == cla):    
-                fill = c['fill']
-                thickness = c['thickness']
-                stroke = c['stroke']
-                fill_opacity = c['fill-opacity']
-                stroke_opacity = c['stroke-opacity']
-                break
+        c = get_style_from_class(context, cla)
+        if c and c['fill'].startswith('url'):
+            url_full = c['fill'][5:]
+            url = url_full[:url_full.find('}')]
+            c = get_style_from_class(context, url)
+
+        if c:
+            fill = c['fill']
+            thickness = c['thickness']
+            stroke = c['stroke']
+            fill_opacity = c['fill-opacity']
+            stroke_opacity = c['stroke-opacity']
 
     elif style:
         elems = style.split(';')
@@ -2002,6 +2015,37 @@ class SVGGeometryCLASTYLE(SVGGeometryContainer):
                 context['classes'].append(cla)
 
 
+class SVGGeometryLINEARGRAD(SVGGeometryContainer):
+
+    def __init__(self, node, context):
+
+        super().__init__(node, context)
+
+        attr_id = node.getAttribute('id')
+        cla = SVGEmptyClasses.copy()
+        cla['clskey'] = attr_id
+
+        key = 'fill'
+        for _node in node.childNodes:
+            if _node.nodeName == 'stop':
+                
+                style = _node.getAttribute('style')
+                s = style.split(':')
+                if len(s) != 2:
+                    continue
+
+                name = s[0].strip().lower()
+                val = s[1].strip()
+
+                if name == 'stop-color':
+                    val = val.lower()
+                    cla[key] = val 
+                    # now save the last value   
+                    key = 'fill-end'
+
+        context['classes'].append(cla)
+
+
 class SVGLoader(SVGGeometryContainer):
     """
     SVG file loader
@@ -2072,7 +2116,8 @@ svgGeometryClasses = {
     'line': SVGGeometryLINE,
     'polyline': SVGGeometryPOLYLINE,
     'polygon': SVGGeometryPOLYGON,
-    'g': SVGGeometryG}
+    'g': SVGGeometryG,
+    'lineargradient': SVGGeometryLINEARGRAD}
 
 
 def parseAbstractNode(node, context):
