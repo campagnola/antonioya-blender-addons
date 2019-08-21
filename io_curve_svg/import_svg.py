@@ -443,6 +443,7 @@ def SVGParseStyles(node, context):
     thickness = None
     fill_opacity = None
     stroke_opacity = None
+    rotation = None
 
     cla = node.getAttribute('class')
     style = node.getAttribute('style')
@@ -455,10 +456,12 @@ def SVGParseStyles(node, context):
 
         if c:
             fill = c['fill']
+            fill_end = c['fill-end']
             thickness = c['thickness']
             stroke = c['stroke']
             fill_opacity = c['fill-opacity']
             stroke_opacity = c['stroke-opacity']
+            rotation = c['rotation']
 
     elif style:
         elems = style.split(';')
@@ -2024,6 +2027,16 @@ class SVGGeometryLINEARGRAD(SVGGeometryContainer):
         attr_id = node.getAttribute('id')
         cla = SVGEmptyClasses.copy()
         cla['clskey'] = attr_id.lower()
+
+        # Calc angle of gradient
+        x1 = float(node.getAttribute('x1'))
+        y1 = float(node.getAttribute('y1'))
+        x2 = float(node.getAttribute('x2'))
+        y2 = float(node.getAttribute('y2'))
+
+        v1 = Vector((x2 - x1, y2 - y1))
+        v2 = Vector((1.0, 0.0))
+        cla['rotation'] = v2.angle(v1)
 
         key = 'fill'
         for _node in node.childNodes:
