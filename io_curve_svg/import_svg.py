@@ -423,11 +423,13 @@ def SVGParseStyles(node, context):
     Parse node to get different styles for displaying geometries
     (materials, filling flags, etc..)
     """
-
     styles = SVGEmptyStyles.copy()
 
+    cla = node.getAttribute('class')
     style = node.getAttribute('style')
-    if style:
+    if cla:
+        print("Hay clase")
+    elif style:
         elems = style.split(';')
         for elem in elems:
             s = elem.split(':')
@@ -1946,19 +1948,17 @@ class SVGGeometrySVG(SVGGeometryContainer):
         self._popMatrix()
 
 
-class SVGGeometrySTYLES(SVGGeometryContainer):
+class SVGGeometryCLASTYLE(SVGGeometryContainer):
     """
-    Main style holder (general styles, not by element)
+    Main class holder (general styles, not by element)
     """
 
     def __init__(self, node, context):
 
         super().__init__(node, context)
     
-    def _doCreateGeom(self, instancing):
-
-        for node in self._node.childNodes:
-            elems = node.data.split('}')
+        for _node in node.childNodes:
+            elems = _node.data.split('}')
             for elem in elems:
                 cla = SVGEmptyClasses.copy()
                 k = elem.split('{')
@@ -1994,7 +1994,7 @@ class SVGGeometrySTYLES(SVGGeometryContainer):
                         number, last_char = SVGParseFloat(val)
                         cla['stroke-opacity'] = float(number)
 
-                self._context['classes'].append(cla)
+                context['classes'].append(cla)
 
 
 class SVGLoader(SVGGeometryContainer):
@@ -2056,7 +2056,7 @@ class SVGLoader(SVGGeometryContainer):
 
 svgGeometryClasses = {
     'svg': SVGGeometrySVG,
-    'style': SVGGeometrySTYLES,
+    'style': SVGGeometryCLASTYLE,
     'path': SVGGeometryPATH,
     'defs': SVGGeometryDEFS,
     'symbol': SVGGeometrySYMBOL,
