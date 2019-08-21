@@ -45,6 +45,13 @@ SVGUnits = {"": 1.0,
             "INVALID": 1.0,  # some DocBook files contain this
             }
 
+SVGEmptyClasses = {'clskey': None,
+                  'fill': None,
+                  'stroke': None,
+                  'fill-opacity': None,
+                  'stroke-opacity': None}
+
+
 SVGEmptyStyles = {'useFill': None,
                   'fill': None,
                   'useStroke': None,
@@ -1939,6 +1946,57 @@ class SVGGeometrySVG(SVGGeometryContainer):
         self._popMatrix()
 
 
+class SVGGeometrySTYLES(SVGGeometryContainer):
+    """
+    Main style holder (general styles, not by element)
+    """
+
+    def __init__(self, node, context):
+
+        super().__init__(node, context)
+    
+    def _doCreateGeom(self, instancing):
+
+        for node in self._node.childNodes:
+            elems = node.data.split('}')
+            for elem in elems:
+                cla = SVGEmptyClasses.copy()
+                k = elem.split('{')
+                if len(k) != 2:
+                    continue
+
+                key = k[0].strip().lower()
+                cla['clskey'] = key[1:]
+
+                params = k[1].split(';')
+                if len(params) < 1:
+                    continue
+
+                for parm in params:
+                    s = parm.split(':')
+                    if len(s) != 2:
+                        continue
+                    name = s[0].strip().lower()
+                    val = s[1].strip()
+
+                    if name == 'fill':
+                        val = val.lower()
+                        cla['fill'] = val
+
+                    if name == 'stroke':
+                        cla['stroke'] = val
+
+                    if name == 'fill-opacity':
+                        number, last_char = SVGParseFloat(val)
+                        cla['fill-opacity'] = float(number)
+
+                    if name == 'stroke-opacity':
+                        number, last_char = SVGParseFloat(val)
+                        cla['stroke-opacity'] = float(number)
+
+                self._context['classes'].append(cla)
+
+
 class SVGLoader(SVGGeometryContainer):
     """
     SVG file loader
@@ -1982,6 +2040,7 @@ class SVGLoader(SVGGeometryContainer):
                          'rect': rect,
                          'matrix': m,
                          'materials': {},
+                         'classes': [None],
                          'styles': [None],
                          'style': None,
                          'do_colormanage': do_colormanage,
@@ -1997,6 +2056,7 @@ class SVGLoader(SVGGeometryContainer):
 
 svgGeometryClasses = {
     'svg': SVGGeometrySVG,
+    'style': SVGGeometrySTYLES,
     'path': SVGGeometryPATH,
     'defs': SVGGeometryDEFS,
     'symbol': SVGGeometrySYMBOL,
