@@ -446,7 +446,7 @@ def SVGParseStyles(node, context):
                 fill_opacity = c['fill-opacity']
                 stroke_opacity = c['stroke-opacity']
                 break
-                
+
     elif style:
         elems = style.split(';')
         for elem in elems:
@@ -1957,7 +1957,7 @@ class SVGGeometryCLASTYLE(SVGGeometryContainer):
     def __init__(self, node, context):
 
         super().__init__(node, context)
-    
+
         for _node in node.childNodes:
             elems = _node.data.split('}')
             for elem in elems:
@@ -1997,7 +1997,7 @@ class SVGGeometryCLASTYLE(SVGGeometryContainer):
 
                     if name == 'stroke-width':
                         number, last_char = SVGParseFloat(val)
-                        styles['thickness'] = float(number)
+                        cla['thickness'] = float(number)
 
                 context['classes'].append(cla)
 
