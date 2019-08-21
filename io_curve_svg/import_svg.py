@@ -2023,7 +2023,7 @@ class SVGGeometryLINEARGRAD(SVGGeometryContainer):
 
         attr_id = node.getAttribute('id')
         cla = SVGEmptyClasses.copy()
-        cla['clskey'] = attr_id
+        cla['clskey'] = attr_id.lower()
 
         key = 'fill'
         for _node in node.childNodes:
