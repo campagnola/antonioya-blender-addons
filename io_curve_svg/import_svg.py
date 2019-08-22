@@ -481,8 +481,14 @@ def SVGParseStyles(node, context):
             val = s[1].strip()
 
             if name == 'fill':
-                val = val.lower()
-                fill = val
+                if val and val.startswith('url'):
+                    url_full = val[5:]
+                    url = url_full[:url_full.find(')')].lower()
+                    c = get_style_from_class(context, url)
+                    fill = c['fill']
+                else:
+                    val = val.lower()
+                    fill = val
 
             if name == 'stroke':
                 val = val.lower()
@@ -534,8 +540,7 @@ def SVGParseStyles(node, context):
             styles['stroke'] = None
 
     if thickness and thickness != 'none':
-        number, last_char = SVGParseFloat(thickness)
-        styles['thickness'] = float(number)
+        styles['thickness'] = thickness
 
     if rotation:
         styles['rotation'] = rotation
