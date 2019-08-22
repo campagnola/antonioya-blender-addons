@@ -57,9 +57,11 @@ SVGEmptyClasses = {'clskey': None,
 
 SVGEmptyStyles = {'useFill': None,
                   'fill': None,
+                  'fill-end': None,
                   'useStroke': None,
                   'stroke': None,
-                  'thickness': None}
+                  'thickness': None,
+                  'rotation': None}
 
 def SVGParseFloat(s, i=0):
     """
@@ -509,6 +511,10 @@ def SVGParseStyles(node, context):
         else:
             styles['useFill'] = True
             styles['fill'] = SVGGetMaterial('SVGMat', val, context)
+
+    if fill_end:
+        styles['fill-end'] = fill_end
+
     if stroke:
         styles['useStroke'] = True
         val = stroke.lower()
@@ -516,9 +522,13 @@ def SVGParseStyles(node, context):
             styles['stroke'] = SVGGetMaterial('SVGMat_stroke', val, context)
         else:
             styles['stroke'] = None
+
     if thickness and thickness != 'none':
         number, last_char = SVGParseFloat(thickness)
         styles['thickness'] = float(number)
+
+    if rotation:
+        styles['rotation'] = rotation
 
     if fill_opacity and fill_opacity != 'none':
         number, last_char = SVGParseFloat(fill_opacity)
@@ -1284,6 +1294,26 @@ class SVGGeometryContainer(SVGGeometry):
 
         return self._geometries
 
+def get_color_from_hex(color, context):
+    diff = None
+    diffuse_color = (0, 0, 0, 1.0)
+
+    if color.startswith('#'):
+        color = color[1:]
+        if len(color) == 3:
+            color = color[0] * 2 + color[1] * 2 + color[2] * 2
+
+        diff = (int(color[0:2], 16), int(color[2:4], 16), int(color[4:6], 16))
+
+        diffuse_color = ([x / 255.0 for x in diff])
+
+    if context['do_colormanage']:
+        diffuse_color[0] = srgb_to_linearrgb(diffuse_color[0])
+        diffuse_color[1] = srgb_to_linearrgb(diffuse_color[1])
+        diffuse_color[2] = srgb_to_linearrgb(diffuse_color[2])
+
+    return (*diffuse_color, 1.0)
+
 
 class SVGGeometryPATH(SVGGeometry):
     """
@@ -1328,6 +1358,21 @@ class SVGGeometryPATH(SVGGeometry):
         id_names_from_node(self._node, ob)
 
         if self._styles['useFill']:
+            # Create gradient info to recreate later
+            if self._styles['fill-end']:
+                mat = self._styles['fill']
+                fill_end = get_color_from_hex(self._styles['fill-end'], self._context)
+                rotation = self._styles['rotation']
+                bpy.data.materials.create_gpencil_data(mat)
+                if mat and mat.grease_pencil:
+                    gpmat = mat.grease_pencil
+                    gpmat.show_fill = True
+                    gpmat.fill_style = 'GRADIENT'
+                    gpmat.mix_color = fill_end
+                    gpmat.mix_factor = 0.5
+                    if rotation:
+                        gpmat.pattern_angle = rotation
+
             cu.dimensions = '2D'
             cu.fill_mode = 'BOTH'
             cu.materials.append(self._styles['fill'])
@@ -2200,7 +2245,9 @@ def create_gpencil(context):
     # Generate strokes for each curve
     for ob_cu in context['curves']:
         if ob_cu:
+            # Create the strokes
             ob_cu.generate_gpencil_strokes(ob_gp)
+
             # Remove temporary curve objects 
             delete_curve_object(ob_cu)
 
