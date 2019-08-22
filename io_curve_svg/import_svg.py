@@ -48,6 +48,7 @@ SVGUnits = {"": 1.0,
 SVGEmptyClasses = {'clskey': None,
                   'fill': None,
                   'fill-end': None,
+                  'fill-end-opacity': None,
                   'stroke': None,
                   'fill-opacity': None,
                   'stroke-opacity': None,
@@ -58,6 +59,7 @@ SVGEmptyClasses = {'clskey': None,
 SVGEmptyStyles = {'useFill': None,
                   'fill': None,
                   'fill-end': None,
+                  'fill-end-opacity': None,
                   'useStroke': None,
                   'stroke': None,
                   'thickness': None,
@@ -441,6 +443,7 @@ def SVGParseStyles(node, context):
 
     fill = None
     fill_end = None
+    fill_end_opacity = None
     stroke = None
     thickness = None
     fill_opacity = None
@@ -459,6 +462,7 @@ def SVGParseStyles(node, context):
         if c:
             fill = c['fill']
             fill_end = c['fill-end']
+            fill_end_opacity = c['fill-end-opacity']
             thickness = c['thickness']
             stroke = c['stroke']
             fill_opacity = c['fill-opacity']
@@ -514,6 +518,9 @@ def SVGParseStyles(node, context):
 
     if fill_end:
         styles['fill-end'] = fill_end
+
+    if fill_end_opacity:
+        styles['fill-end-opacity'] = fill_end_opacity
 
     if stroke:
         styles['useStroke'] = True
@@ -1216,6 +1223,29 @@ class SVGGeometry:
 
         return None
 
+    def setGradient(self):
+        if self._styles['fill-end']:
+            mat = self._styles['fill']
+            fill_end = get_color_from_hex(self._styles['fill-end'], self._context)
+            if self._styles['fill-end-opacity']:
+                fill_end_opacity = self._styles['fill-end-opacity']
+                fill_end[3] = fill_end_opacity
+
+            rotation = self._styles['rotation']
+
+            if mat and mat.grease_pencil is None:
+                bpy.data.materials.create_gpencil_data(mat)
+
+            if mat and mat.grease_pencil:
+                gpmat = mat.grease_pencil
+                gpmat.show_fill = True
+                gpmat.fill_style = 'GRADIENT'
+                gpmat.mix_color = fill_end
+                gpmat.mix_factor = 0.5
+                if rotation:
+                    gpmat.pattern_angle = rotation
+
+
     def createGeom(self, instancing):
         """
         Create real geometries
@@ -1312,7 +1342,7 @@ def get_color_from_hex(color, context):
         diffuse_color[1] = srgb_to_linearrgb(diffuse_color[1])
         diffuse_color[2] = srgb_to_linearrgb(diffuse_color[2])
 
-    return (*diffuse_color, 1.0)
+    return [*diffuse_color, 1.0]
 
 
 class SVGGeometryPATH(SVGGeometry):
@@ -1358,21 +1388,7 @@ class SVGGeometryPATH(SVGGeometry):
         id_names_from_node(self._node, ob)
 
         if self._styles['useFill']:
-            # Create gradient info to recreate later
-            if self._styles['fill-end']:
-                mat = self._styles['fill']
-                fill_end = get_color_from_hex(self._styles['fill-end'], self._context)
-                rotation = self._styles['rotation']
-                bpy.data.materials.create_gpencil_data(mat)
-                if mat and mat.grease_pencil:
-                    gpmat = mat.grease_pencil
-                    gpmat.show_fill = True
-                    gpmat.fill_style = 'GRADIENT'
-                    gpmat.mix_color = fill_end
-                    gpmat.mix_factor = 0.5
-                    if rotation:
-                        gpmat.pattern_angle = rotation
-
+            self.setGradient()
             cu.dimensions = '2D'
             cu.fill_mode = 'BOTH'
             cu.materials.append(self._styles['fill'])
@@ -1612,6 +1628,7 @@ class SVGGeometryRECT(SVGGeometry):
         cu = ob.data
 
         if self._styles['useFill']:
+            self.setGradient()
             cu.dimensions = '2D'
             cu.fill_mode = 'BOTH'
             cu.materials.append(self._styles['fill'])
@@ -1728,6 +1745,7 @@ class SVGGeometryELLIPSE(SVGGeometry):
         id_names_from_node(self._node, ob)
 
         if self._styles['useFill']:
+            self.setGradient()
             cu.dimensions = '2D'
             cu.fill_mode = 'BOTH'
             cu.materials.append(self._styles['fill'])
@@ -1928,6 +1946,7 @@ class SVGGeometryPOLY(SVGGeometry):
         id_names_from_node(self._node, ob)
 
         if self._closed and self._styles['useFill']:
+            self.setGradient()
             cu.dimensions = '2D'
             cu.fill_mode = 'BOTH'
             cu.materials.append(self._styles['fill'])
@@ -2074,33 +2093,40 @@ class SVGGeometryLINEARGRAD(SVGGeometryContainer):
         cla['clskey'] = attr_id.lower()
 
         # Calc angle of gradient
-        x1 = float(node.getAttribute('x1'))
-        y1 = float(node.getAttribute('y1'))
-        x2 = float(node.getAttribute('x2'))
-        y2 = float(node.getAttribute('y2'))
+        if node.getAttribute('x1'):
+            x1 = float(node.getAttribute('x1'))
+            y1 = float(node.getAttribute('y1'))
+            x2 = float(node.getAttribute('x2'))
+            y2 = float(node.getAttribute('y2'))
 
-        v1 = Vector((x2 - x1, y2 - y1))
-        # Default axis orientation
-        v2 = Vector((0.0, 1.0))
-        cla['rotation'] = v2.angle(v1)
+            v1 = Vector((x2 - x1, y2 - y1))
+            # Default axis orientation
+            v2 = Vector((0.0, 1.0))
+            cla['rotation'] = v2.angle(v1)
+        else:
+            cla['rotation'] = 0.0
 
         key = 'fill'
         for _node in node.childNodes:
             if _node.nodeName == 'stop':
-                
                 style = _node.getAttribute('style')
-                s = style.split(':')
-                if len(s) != 2:
-                    continue
+                elems = style.split(';')
+                for elem in elems:
+                    s = elem.split(':')
+                    if len(s) != 2:
+                        continue
 
-                name = s[0].strip().lower()
-                val = s[1].strip()
+                    name = s[0].strip().lower()
+                    val = s[1].strip()
 
-                if name == 'stop-color':
-                    val = val.lower()
-                    cla[key] = val 
-                    # now save the last value   
-                    key = 'fill-end'
+                    if name == 'stop-color':
+                        val = val.lower()
+                        cla[key] = val 
+                        # now save the last value   
+                        key = 'fill-end'
+
+                    if name == 'stop-opacity':
+                        cla['fill-end-opacity'] = float(val) 
 
         context['classes'].append(cla)
 
