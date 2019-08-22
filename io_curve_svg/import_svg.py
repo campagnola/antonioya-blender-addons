@@ -496,6 +496,9 @@ def SVGParseStyles(node, context):
                 number, last_char = SVGParseFloat(val)
                 fill_opacity = float(number)
 
+            if name == 'opacity':
+                fill_opacity = float(val)
+
             if name == 'stroke-opacity':
                 number, last_char = SVGParseFloat(val)
                 stroke_opacity = float(number)
@@ -538,16 +541,14 @@ def SVGParseStyles(node, context):
         styles['rotation'] = rotation
 
     if fill_opacity and fill_opacity != 'none':
-        number, last_char = SVGParseFloat(fill_opacity)
         mat = styles['fill']
         if mat:
-            mat.diffuse_color[3] = float(number)
+            mat.diffuse_color[3] = fill_opacity
         
     if stroke_opacity and stroke_opacity != 'none':
-        number, last_char = SVGParseFloat(stroke_opacity)
         mat = styles['stroke']
         if mat:
-            mat.diffuse_color[3] = float(number)
+            mat.diffuse_color[3] = stroke_opacity
 
     if styles['useFill'] is None:
         fill = node.getAttribute('fill')
@@ -2071,6 +2072,9 @@ class SVGGeometryCLASTYLE(SVGGeometryContainer):
                         number, last_char = SVGParseFloat(val)
                         cla['fill-opacity'] = float(number)
 
+                    if name == 'opacity':
+                        cla['fill-opacity'] = float(val)
+
                     if name == 'stroke-opacity':
                         number, last_char = SVGParseFloat(val)
                         cla['stroke-opacity'] = float(number)
@@ -2101,7 +2105,7 @@ class SVGGeometryLINEARGRAD(SVGGeometryContainer):
 
             v1 = Vector((x2 - x1, y2 - y1))
             # Default axis orientation
-            v2 = Vector((0.0, 1.0))
+            v2 = Vector((1.0, 0.0))
             cla['rotation'] = v2.angle(v1)
         else:
             cla['rotation'] = 0.0
