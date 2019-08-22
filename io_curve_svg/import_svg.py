@@ -2080,7 +2080,8 @@ class SVGGeometryLINEARGRAD(SVGGeometryContainer):
         y2 = float(node.getAttribute('y2'))
 
         v1 = Vector((x2 - x1, y2 - y1))
-        v2 = Vector((1.0, 0.0))
+        # Default axis orientation
+        v2 = Vector((0.0, 1.0))
         cla['rotation'] = v2.angle(v1)
 
         key = 'fill'
