@@ -486,6 +486,9 @@ def SVGParseStyles(node, context):
                     url = url_full[:url_full.find(')')].lower()
                     c = get_style_from_class(context, url)
                     fill = c['fill']
+                    fill_end = c['fill-end']
+                    fill_end_opacity = c['fill-end-opacity']
+                    rotation = c['rotation']
                 else:
                     val = val.lower()
                     fill = val
@@ -2115,27 +2118,36 @@ class SVGGeometryLINEARGRAD(SVGGeometryContainer):
         else:
             cla['rotation'] = 0.0
 
-        key = 'fill'
-        for _node in node.childNodes:
-            if _node.nodeName == 'stop':
-                style = _node.getAttribute('style')
-                elems = style.split(';')
-                for elem in elems:
-                    s = elem.split(':')
-                    if len(s) != 2:
-                        continue
+        if node.getAttribute('xlink:href'):
+            ref = node.getAttribute('xlink:href')
+            url = ref[1:].lower()
+            c = get_style_from_class(context, url)
+            if c:
+                cla['fill'] = c['fill']
+                cla['fill-end'] = c['fill-end']
+                cla['fill-end-opacity'] = c['fill-end-opacity']
+        else:       
+            key = 'fill'
+            for _node in node.childNodes:
+                if _node.nodeName == 'stop':
+                    style = _node.getAttribute('style')
+                    elems = style.split(';')
+                    for elem in elems:
+                        s = elem.split(':')
+                        if len(s) != 2:
+                            continue
 
-                    name = s[0].strip().lower()
-                    val = s[1].strip()
+                        name = s[0].strip().lower()
+                        val = s[1].strip()
 
-                    if name == 'stop-color':
-                        val = val.lower()
-                        cla[key] = val 
-                        # now save the last value   
-                        key = 'fill-end'
+                        if name == 'stop-color':
+                            val = val.lower()
+                            cla[key] = val 
+                            # now save the last value   
+                            key = 'fill-end'
 
-                    if name == 'stop-opacity':
-                        cla['fill-end-opacity'] = float(val) 
+                        if name == 'stop-opacity':
+                            cla['fill-end-opacity'] = float(val) 
 
         context['classes'].append(cla)
 
