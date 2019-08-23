@@ -2316,6 +2316,7 @@ def create_gpencil(context, scale):
     ob_gp.select_set(True)
     bpy.context.view_layer.objects.active = ob_gp
     bpy.ops.object.transform_apply()
+    bpy.ops.object.origin_set(type='ORIGIN_GEOMETRY')
 
 
 def load_svg(context, filepath, do_colormanage, use_collections, target, scale):
@@ -2326,7 +2327,10 @@ def load_svg(context, filepath, do_colormanage, use_collections, target, scale):
     if bpy.ops.object.mode_set.poll():
         bpy.ops.object.mode_set(mode='OBJECT')
 
-    loader = SVGLoader(context, filepath, do_colormanage, use_collections)
+    # For GPencil use always collections to generate layers
+    use_col = use_collections or target == 'GPENCIL'
+
+    loader = SVGLoader(context, filepath, do_colormanage, use_col)
     loader.parse()
     loader.createGeom(False)
 
