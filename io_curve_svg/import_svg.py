@@ -2281,7 +2281,7 @@ def delete_curve_object(ob):
         if cu and cu.users == 0:
             bpy.data.curves.remove(cu)
 
-def create_gpencil(context):
+def create_gpencil(context, scale):
     # Add a new grease pencil object and link to active collection
     svg_name = context['svg']
     main_name = svg_name[: -4]
@@ -2289,6 +2289,8 @@ def create_gpencil(context):
     ob_gp = bpy.data.objects.new(main_name, gpd)
     active_collection = context['active_collection'].name
     bpy.data.collections[active_collection].objects.link(ob_gp)
+    # Scale
+    ob_gp.scale = (scale, scale, scale)
 
     # Generate strokes for each curve
     for ob_cu in context['curves']:
@@ -2305,9 +2307,18 @@ def create_gpencil(context):
         bpy.data.collections.remove(child)
 
     bpy.data.collections.remove(collection)
+    
+    # Deselect all objects
+    for o in bpy.data.objects:
+        o.select_set(False)
+
+    # Apply scale
+    ob_gp.select_set(True)
+    bpy.context.view_layer.objects.active = ob_gp
+    bpy.ops.object.transform_apply()
 
 
-def load_svg(context, filepath, do_colormanage, use_collections, target):
+def load_svg(context, filepath, do_colormanage, use_collections, target, scale):
     """
     Load specified SVG file
     """
@@ -2320,7 +2331,7 @@ def load_svg(context, filepath, do_colormanage, use_collections, target):
     loader.createGeom(False)
 
     if target == 'GPENCIL':
-        create_gpencil(loader._context)
+        create_gpencil(loader._context, scale)
 
 def load(operator, context, filepath=""):
     # error in code should raise exceptions but loading
@@ -2333,7 +2344,7 @@ def load(operator, context, filepath=""):
             operator.report({'WARNING'}, "No Collection active. Active one before importing SVG")
             return {'CANCELLED'}            
 
-        load_svg(context, filepath, do_colormanage, operator.use_collections, operator.target)
+        load_svg(context, filepath, do_colormanage, operator.use_collections, operator.target, operator.scale)
     except (xml.parsers.expat.ExpatError, UnicodeEncodeError) as e:
         import traceback
         traceback.print_exc()

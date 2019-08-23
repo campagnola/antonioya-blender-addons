@@ -42,6 +42,7 @@ if "bpy" in locals():
 import bpy
 from bpy.props import (StringProperty,
                        BoolProperty,
+                       FloatProperty,
                        EnumProperty)
 from bpy_extras.io_utils import ImportHelper
 
@@ -66,6 +67,12 @@ class ImportSVG(bpy.types.Operator, ImportHelper):
         default=True,
     )
 
+    scale: FloatProperty(
+        name='Scale', min=0.5, max=50, default=3.0,
+        precision=2,
+        description='Scale original file',
+    )
+
     def execute(self, context):
         from . import import_svg
 
@@ -78,6 +85,9 @@ class ImportSVG(bpy.types.Operator, ImportHelper):
         row.prop(self, "target")
         row = layout.row(align=True)
         row.prop(self, "use_collections")
+        if self.target == 'GPENCIL':
+            row = layout.row(align=True)
+            row.prop(self, "scale")
 
 
 def menu_func_import(self, context):
