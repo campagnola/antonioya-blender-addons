@@ -2021,9 +2021,9 @@ class SVGGeometrySVG(SVGGeometryContainer):
         rect = SVGRectFromNode(self._node, self._context)
 
         matrix = self.getNodeMatrix()
-        
+
         # Better SVG compatibility: match svg-document units
-        # with blender units (D4319)   
+        # with blender units    
        
         viewbox = []
         unit = ''
@@ -2051,7 +2051,7 @@ class SVGGeometrySVG(SVGGeometryContainer):
             matrix = matrix @ Matrix.Scale(unitscale, 4, Vector((1.0, 0.0, 0.0)))
             matrix = matrix @ Matrix.Scale(unitscale, 4, Vector((0.0, 1.0, 0.0)))    
 
-        # match document origin with 3D space origin.(D5727)
+        # match document origin with 3D space origin.
         if self._node.getAttribute('viewBox'):
             viewbox = parse_array_of_floats(self._node.getAttribute('viewBox'))
             matrix = matrix @ matrix.Translation([0.0, - viewbox[1] - viewbox[3], 0.0])

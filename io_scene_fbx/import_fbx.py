@@ -649,7 +649,9 @@ def blen_read_animations_action_item(action, item, cnodes, fps, anim_offset):
             bl_obj = item.bl_obj
 
         transform_data = item.fbx_transform_data
-        rot_prev = bl_obj.rotation_euler.copy()
+        rot_eul_prev = bl_obj.rotation_euler.copy()
+        rot_quat_prev = bl_obj.rotation_quaternion.copy()
+
 
         # Pre-compute inverted local rest matrix of the bone, if relevant.
         restmat_inv = item.get_bind_matrix().inverted_safe() if item.is_bone else None
@@ -683,13 +685,15 @@ def blen_read_animations_action_item(action, item, cnodes, fps, anim_offset):
             # Now we have a virtual matrix of transform from AnimCurves, we can insert keyframes!
             loc, rot, sca = mat.decompose()
             if rot_mode == 'QUATERNION':
-                pass  # nothing to do!
+                if rot_quat_prev.dot(rot) < 0.0:
+                    rot = -rot
+                rot_quat_prev = rot
             elif rot_mode == 'AXIS_ANGLE':
                 vec, ang = rot.to_axis_angle()
                 rot = ang, vec.x, vec.y, vec.z
             else:  # Euler
-                rot = rot.to_euler(rot_mode, rot_prev)
-                rot_prev = rot
+                rot = rot.to_euler(rot_mode, rot_eul_prev)
+                rot_eul_prev = rot
             for fc, value in zip(blen_curves, chain(loc, rot, sca)):
                 fc.keyframe_points.insert(frame, value, options={'NEEDED', 'FAST'}).interpolation = 'LINEAR'
 
@@ -3040,27 +3044,20 @@ def load(operator, context, filepath="",
             rot = tuple(-r for r in elem_props_get_vector_3d(fbx_props, b'Rotation', (0.0, 0.0, 0.0)))
             scale = tuple(((1.0 / s) if s != 0.0 else 1.0)
                           for s in elem_props_get_vector_3d(fbx_props, b'Scaling', (1.0, 1.0, 1.0)))
-            clamp_uv = (bool(elem_props_get_enum(fbx_props, b'WrapModeU', 0)),
-                        bool(elem_props_get_enum(fbx_props, b'WrapModeV', 0)))
+            clamp = (bool(elem_props_get_enum(fbx_props, b'WrapModeU', 0)) or
+                     bool(elem_props_get_enum(fbx_props, b'WrapModeV', 0)))
 
             if (loc == (0.0, 0.0, 0.0) and
                 rot == (0.0, 0.0, 0.0) and
                 scale == (1.0, 1.0, 1.0) and
-                clamp_uv == (False, False)):
+                clamp == False):
                 return
 
             node_texture.translation = loc
             node_texture.rotation = rot
             node_texture.scale = scale
-
-            # awkward conversion UV clamping to min/max
-            node_texture.min = (0.0, 0.0, 0.0)
-            node_texture.max = (1.0, 1.0, 1.0)
-            node_texture.use_min = node_texture.use_max = clamp_uv[0] or clamp_uv[1]
-            if clamp_uv[0] != clamp_uv[1]:
-                # use bool as index
-                node_texture.min[not clamp[0]] = -1e9
-                node_texture.max[not clamp[0]] = 1e9
+            if clamp:
+                node_texture.extension = 'EXTEND'
 
         for fbx_uuid, fbx_item in fbx_table_nodes.items():
             fbx_obj, blen_data = fbx_item
