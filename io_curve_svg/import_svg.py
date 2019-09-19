@@ -174,7 +174,7 @@ def SVGParseCoord(coord, size):
     """
     Parse coordinate component to common basis
 
-    Needed to handle coordinates set in cm, mm, iches..
+    Needed to handle coordinates set in cm, mm, inches.
     """
 
     token, last_char = SVGParseFloat(coord)
