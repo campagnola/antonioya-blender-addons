@@ -55,7 +55,7 @@ SVGEmptyStyles = {'useFill': None,
                   'rotation': None}
 
 
-def SVGCreateCurve(context):
+def SVGCreateCurve(context, layer):
     """
     Create new curve object to hold splines in
     """
@@ -422,18 +422,18 @@ def SVGParseStyles(node, context):
                 stroke = val
 
             if name == 'stroke-width':
-                number, last_char = SVGParseFloat(val)
+                number, last_char = read_float(val)
                 thickness = float(number)
 
             if name == 'fill-opacity':
-                number, last_char = SVGParseFloat(val)
+                number, last_char = read_float(val)
                 fill_opacity = float(number)
 
             if name == 'opacity':
                 fill_opacity = float(val)
 
             if name == 'stroke-opacity':
-                number, last_char = SVGParseFloat(val)
+                number, last_char = read_float(val)
                 stroke_opacity = float(number)
     else:
         # Some SVG files do not use styles but direct definition of colors
@@ -2028,18 +2028,18 @@ class SVGGeometryCLASTYLE(SVGGeometryContainer):
                         cla['stroke'] = val
 
                     if name == 'fill-opacity':
-                        number, last_char = SVGParseFloat(val)
+                        number, last_char = read_float(val)
                         cla['fill-opacity'] = float(number)
 
                     if name == 'opacity':
                         cla['fill-opacity'] = float(val)
 
                     if name == 'stroke-opacity':
-                        number, last_char = SVGParseFloat(val)
+                        number, last_char = read_float(val)
                         cla['stroke-opacity'] = float(number)
 
                     if name == 'stroke-width':
-                        number, last_char = SVGParseFloat(val)
+                        number, last_char = read_float(val)
                         cla['thickness'] = float(number)
 
                 context['classes'].append(cla)
