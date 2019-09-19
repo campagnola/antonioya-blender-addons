@@ -26,24 +26,13 @@ import bpy
 from mathutils import Vector, Matrix
 
 from . import svg_colors
-from .svg_util import (srgb_to_linearrgb,
+from .svg_util import (units,
+                       srgb_to_linearrgb,
                        check_points_equal,
-                       parse_array_of_floats)
+                       parse_array_of_floats,
+                       read_float)
 
 #### Common utilities ####
-
-# TODO: "em" and "ex" aren't actually supported
-SVGUnits = {"": 1.0,
-            "px": 1.0,
-            "in": 90.0,
-            "mm": 90.0 / 25.4,
-            "cm": 90.0 / 2.54,
-            "pt": 1.25,
-            "pc": 15.0,
-            "em": 1.0,
-            "ex": 1.0,
-            "INVALID": 1.0,  # some DocBook files contain this
-            }
 
 SVGEmptyClasses = {'clskey': None,
                   'fill': None,
@@ -65,73 +54,8 @@ SVGEmptyStyles = {'useFill': None,
                   'thickness': None,
                   'rotation': None}
 
-def SVGParseFloat(s, i=0):
-    """
-    Parse first float value from string
 
-    Returns value as string
-    """
-
-    start = i
-    n = len(s)
-    token = ''
-
-    # Skip leading whitespace characters
-    while i < n and (s[i].isspace() or s[i] == ','):
-        i += 1
-
-    if i == n:
-        return None, i
-
-    # Read sign
-    if s[i] == '-':
-        token += '-'
-        i += 1
-    elif s[i] == '+':
-        i += 1
-
-    # Read integer part
-    if s[i].isdigit():
-        while i < n and s[i].isdigit():
-            token += s[i]
-            i += 1
-
-    # Fractional part
-    if i < n and s[i] == '.':
-        token += '.'
-        i += 1
-
-        if s[i].isdigit():
-            while i < n and s[i].isdigit():
-                token += s[i]
-                i += 1
-        elif s[i].isspace() or s[i] == ',':
-            # Inkscape sometimes uses weird float format with missed
-            # fractional part after dot. Suppose zero fractional part
-            # for this case
-            pass
-        else:
-            raise Exception('Invalid float value near ' + s[start:start + 10])
-
-    # Degree
-    if i < n and (s[i] == 'e' or s[i] == 'E'):
-        token += s[i]
-        i += 1
-        if s[i] == '+' or s[i] == '-':
-            token += s[i]
-            i += 1
-
-        if s[i].isdigit():
-            while i < n and s[i].isdigit():
-                token += s[i]
-                i += 1
-        else:
-            raise Exception('Invalid float value near ' + s[start:start + 10])
-
-    return token, i
-
-
-def SVGCreateCurve(context, layer):
+def SVGCreateCurve(context):
     """
     Create new curve object to hold splines in
     """
@@ -177,14 +101,14 @@ def SVGParseCoord(coord, size):
     Needed to handle coordinates set in cm, mm, inches.
     """
 
-    token, last_char = SVGParseFloat(coord)
+    token, last_char = read_float(coord)
     val = float(token)
     unit = coord[last_char:].strip()  # strip() in case there is a space
 
     if unit == '%':
         return float(size) / 100.0 * val
     else:
-        return val * SVGUnits[unit]
+        return val * units[unit]
 
     return val
 
@@ -428,8 +352,8 @@ def get_style_from_class(context, cla):
     for c in context['classes']:
         if c is None:
             continue
-        # Find this style    
-        if (c['clskey'] == cla):    
+        # Find this style
+        if (c['clskey'] == cla):
             return c
 
     return None
@@ -552,7 +476,7 @@ def SVGParseStyles(node, context):
         mat = styles['fill']
         if mat:
             mat.diffuse_color[3] = fill_opacity
-        
+
     if stroke_opacity and stroke_opacity != 'none':
         mat = styles['stroke']
         if mat:
@@ -616,7 +540,7 @@ class SVGPathData:
             elif c.lower() in commands:
                 tokens.append(c)
             elif c in ['-', '.'] or c.isdigit():
-                token, last_char = SVGParseFloat(d, i)
+                token, last_char = read_float(d, i)
                 tokens.append(token)
 
                 # in most cases len(token) and (last_char - i) are the same
@@ -2023,33 +1947,33 @@ class SVGGeometrySVG(SVGGeometryContainer):
         matrix = self.getNodeMatrix()
 
         # Better SVG compatibility: match svg-document units
-        # with blender units    
-       
+        # with blender units
+
         viewbox = []
         unit = ''
-         
+
         if self._node.getAttribute('height'):
             raw_height = self._node.getAttribute('height')
-            token, last_char = SVGParseFloat(raw_height)
+            token, last_char = read_float(raw_height)
             document_height = float(token)
-            unit = raw_height[last_char:].strip() 
-       
+            unit = raw_height[last_char:].strip()
+
         if self._node.getAttribute('viewBox'):
             viewbox = parse_array_of_floats(self._node.getAttribute('viewBox'))
-            
+
         if len(viewbox) == 4 and unit in ('cm', 'mm', 'in', 'pt', 'pc'):
 
             #one unit equals whis svg units:
             unitscale = document_height / (viewbox[3] - viewbox[1])
-            
-            #convert units to BU: 
-            unitscale = unitscale * SVGUnits[unit] / 90 * 1000 / 39.3701 
-            
-            #apply blender unit scale: 
+
+            #convert units to BU:
+            unitscale = unitscale * units[unit] / 90 * 1000 / 39.3701
+
+            #apply blender unit scale:
             unitscale = unitscale / bpy.context.scene.unit_settings.scale_length
-        
+
             matrix = matrix @ Matrix.Scale(unitscale, 4, Vector((1.0, 0.0, 0.0)))
-            matrix = matrix @ Matrix.Scale(unitscale, 4, Vector((0.0, 1.0, 0.0)))    
+            matrix = matrix @ Matrix.Scale(unitscale, 4, Vector((0.0, 1.0, 0.0)))
 
         # match document origin with 3D space origin.
         if self._node.getAttribute('viewBox'):
@@ -2153,7 +2077,7 @@ class SVGGeometryLINEARGRAD(SVGGeometryContainer):
                 cla['fill'] = c['fill']
                 cla['fill-end'] = c['fill-end']
                 cla['fill-end-opacity'] = c['fill-end-opacity']
-        else:       
+        else:
             key = 'fill'
             for _node in node.childNodes:
                 if _node.nodeName == 'stop':
@@ -2169,12 +2093,12 @@ class SVGGeometryLINEARGRAD(SVGGeometryContainer):
 
                         if name == 'stop-color':
                             val = val.lower()
-                            cla[key] = val 
-                            # now save the last value   
+                            cla[key] = val
+                            # now save the last value
                             key = 'fill-end'
 
                         if name == 'stop-opacity':
-                            cla['fill-end-opacity'] = float(val) 
+                            cla['fill-end-opacity'] = float(val)
 
         context['classes'].append(cla)
 
@@ -2299,7 +2223,7 @@ def delete_curve_object(ob):
         ma = slot.material
         if ma and ma.users == 1:
             bpy.data.materials.remove(ma)
-            
+
     # Delete Object
     bpy.data.objects.remove(ob)
 
@@ -2325,7 +2249,7 @@ def create_gpencil(context, scale):
             # Create the strokes
             ob_cu.generate_gpencil_strokes(ob_gp)
 
-            # Remove temporary curve objects 
+            # Remove temporary curve objects
             delete_curve_object(ob_cu)
 
     # Remove all collections created, first all childs and finally the main one
@@ -2334,7 +2258,7 @@ def create_gpencil(context, scale):
         bpy.data.collections.remove(child)
 
     bpy.data.collections.remove(collection)
-    
+
     # Deselect all objects
     for o in bpy.data.objects:
         o.select_set(False)
@@ -2373,7 +2297,7 @@ def load(operator, context, filepath=""):
         active_collection = bpy.context.view_layer.active_layer_collection
         if active_collection is None or active_collection.name == 'Master Collection':
             operator.report({'WARNING'}, "No Collection active. Active one before importing SVG")
-            return {'CANCELLED'}            
+            return {'CANCELLED'}
 
         load_svg(context, filepath, do_colormanage, operator.use_collections, operator.target, operator.scale)
     except (xml.parsers.expat.ExpatError, UnicodeEncodeError) as e:
