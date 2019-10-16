@@ -52,6 +52,13 @@ def get_layers(layers):
             return [x in layers for x in range(0, 32)]
 
 
+def set_bone_layers(bone, layers, combine=False):
+    if combine:
+        bone.layers = [ a or b for a, b in zip(bone.layers, layers) ]
+    else:
+        bone.layers = layers
+
+
 #=============================================
 # UI utilities
 #=============================================
@@ -64,7 +71,7 @@ class ControlLayersOption:
 
         self.toggle_option = self.name+'_layers_extra'
         self.layers_option = self.name+'_layers'
-        self.toggle_name = toggle_name if toggle_name else self.toggle_option
+        self.toggle_name = toggle_name if toggle_name else "Assign " + self.name.title() + " Layers"
 
     def get(self, params):
         if getattr(params, self.toggle_option):
@@ -72,7 +79,7 @@ class ControlLayersOption:
         else:
             return None
 
-    def assign(self, params, bone_set, bone_list):
+    def assign(self, params, bone_set, bone_list, combine=False):
         layers = self.get(params)
 
         if isinstance(bone_set, bpy.types.Object):
@@ -84,7 +91,18 @@ class ControlLayersOption:
                 if isinstance(bone, bpy.types.PoseBone):
                     bone = bone.bone
 
-                bone.layers = layers
+                set_bone_layers(bone, layers, combine)
+
+    def assign_rig(self, rig, bone_list, combine=False, priority=None):
+        layers = self.get(rig.params)
+        bone_set = rig.obj.data.bones
+
+        if layers:
+            for name in bone_list:
+                set_bone_layers(bone_set[name], layers, combine)
+
+                if priority is not None:
+                    rig.generator.set_layer_group_priority(name, layers, priority)
 
     def add_parameters(self, params):
         prop_toggle = bpy.props.BoolProperty(
@@ -104,10 +122,15 @@ class ControlLayersOption:
         setattr(params, self.layers_option, prop_layers)
 
     def parameters_ui(self, layout, params):
-        r = layout.row()
-        r.prop(params, self.toggle_option)
-        r.active = getattr(params, self.toggle_option)
+        box = layout.box()
+        box.prop(params, self.toggle_option)
 
+        active = getattr(params, self.toggle_option)
+
+        if not active:
+            return
+
+        r = box.row()
         col = r.column(align=True)
         row = col.row(align=True)
 

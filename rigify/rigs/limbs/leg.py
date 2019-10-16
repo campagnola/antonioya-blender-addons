@@ -121,13 +121,21 @@ class Rig(BaseLimbRig):
 
         return name
 
+    def build_ik_pivot(self, ik_name, **args):
+        heel_bone = self.get_bone(self.bones.org.heel)
+        args = {
+            'position': (heel_bone.head + heel_bone.tail)/2,
+            **args
+        }
+        return super().build_ik_pivot(ik_name, **args)
+
     def register_switch_parents(self, pbuilder):
         super().register_switch_parents(pbuilder)
 
         pbuilder.register_parent(self, self.bones.org.main[2], exclude_self=True)
 
     def make_ik_ctrl_widget(self, ctrl):
-        create_foot_widget(self.obj, ctrl, bone_transform_name=None)
+        create_foot_widget(self.obj, ctrl)
 
 
     ####################################################
@@ -143,7 +151,7 @@ class Rig(BaseLimbRig):
 
     @stage.parent_bones
     def parent_heel_control_bone(self):
-        self.set_bone_parent(self.bones.ctrl.heel, self.bones.ctrl.ik)
+        self.set_bone_parent(self.bones.ctrl.heel, self.get_ik_control_output())
 
     @stage.configure_bones
     def configure_heel_control_bone(self):
@@ -159,7 +167,7 @@ class Rig(BaseLimbRig):
 
     @stage.generate_widgets
     def generate_heel_control_widget(self):
-        create_ballsocket_widget(self.obj, self.bones.ctrl.heel, bone_transform_name=None)
+        create_ballsocket_widget(self.obj, self.bones.ctrl.heel)
 
 
     ####################################################
@@ -200,7 +208,7 @@ class Rig(BaseLimbRig):
     @stage.parent_bones
     def parent_roll_mch_chain(self):
         chain = self.bones.mch.heel
-        self.set_bone_parent(chain[0], self.bones.ctrl.ik)
+        self.set_bone_parent(chain[0], self.get_ik_control_output())
         self.parent_bone_chain(chain)
 
     @stage.rig_bones

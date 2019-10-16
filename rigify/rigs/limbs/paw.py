@@ -110,7 +110,7 @@ class Rig(BaseLimbRig):
         pbuilder.register_parent(self, self.bones.org.main[3], exclude_self=True)
 
     def make_ik_ctrl_widget(self, ctrl):
-        create_foot_widget(self.obj, ctrl, bone_transform_name=None)
+        create_foot_widget(self.obj, ctrl)
 
 
     ####################################################
@@ -126,7 +126,7 @@ class Rig(BaseLimbRig):
 
     @stage.parent_bones
     def parent_heel_control_bone(self):
-        self.set_bone_parent(self.bones.ctrl.heel, self.bones.ctrl.ik)
+        self.set_bone_parent(self.bones.ctrl.heel, self.get_ik_control_output())
 
     @stage.configure_bones
     def configure_heel_control_bone(self):
@@ -136,7 +136,7 @@ class Rig(BaseLimbRig):
 
     @stage.generate_widgets
     def generate_heel_control_widget(self):
-        create_ballsocket_widget(self.obj, self.bones.ctrl.heel, bone_transform_name=None)
+        create_ballsocket_widget(self.obj, self.bones.ctrl.heel)
 
 
     ####################################################
@@ -150,7 +150,7 @@ class Rig(BaseLimbRig):
     def parent_fk_parent_bone(self, i, parent_mch, prev_ctrl, org, prev_org):
         if i == 3:
             self.set_bone_parent(parent_mch, prev_org, use_connect=True)
-            self.set_bone_parent(self.bones.mch.toe_socket, self.bones.ctrl.ik)
+            self.set_bone_parent(self.bones.mch.toe_socket, self.get_ik_control_output())
 
         else:
             super().parent_fk_parent_bone(i, parent_mch, prev_ctrl, org, prev_org)

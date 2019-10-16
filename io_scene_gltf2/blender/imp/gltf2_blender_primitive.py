@@ -70,16 +70,18 @@ class BlenderPrimitive():
         # unused)
         pidx_to_bidx = [-1] * len(positions)
         bidx = len(bme_verts)
-        for pidx in range(0, len(positions)):
-            if pidx in used_pidxs:
-                bme_verts.new(positions[pidx])
-                vert_idxs.append((bidx, pidx))
-                pidx_to_bidx[pidx] = bidx
-                bidx += 1
+        if bpy.app.debug:
+            used_pidxs = list(used_pidxs)
+            used_pidxs.sort()
+        for pidx in used_pidxs:
+            bme_verts.new(positions[pidx])
+            vert_idxs.append((bidx, pidx))
+            pidx_to_bidx[pidx] = bidx
+            bidx += 1
         bme_verts.ensure_lookup_table()
 
         # Add edges/faces to bmesh
-        mode = pyprimitive.mode or 4
+        mode = 4 if pyprimitive.mode is None else pyprimitive.mode
         edges, faces = BlenderPrimitive.edges_and_faces(mode, indices)
         # NOTE: edges and vertices are in terms of pidxs!
         for edge in edges:
