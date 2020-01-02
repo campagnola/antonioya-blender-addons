@@ -26,6 +26,7 @@ from io_scene_gltf2.io.exp import gltf2_io_image_data
 from io_scene_gltf2.io.com import gltf2_io_debug
 from io_scene_gltf2.blender.exp import gltf2_blender_image
 from io_scene_gltf2.blender.exp.gltf2_blender_gather_cache import cached
+from io_scene_gltf2.io.exp.gltf2_io_user_extensions import export_user_extensions
 
 
 @cached
@@ -47,7 +48,7 @@ def gather_image(
     uri = __gather_uri(image_data, mime_type, name, export_settings)
     buffer_view = __gather_buffer_view(image_data, mime_type, name, export_settings)
 
-    return __make_image(
+    image = __make_image(
         buffer_view,
         __gather_extensions(blender_shader_sockets_or_texture_slots, export_settings),
         __gather_extras(blender_shader_sockets_or_texture_slots, export_settings),
@@ -56,6 +57,10 @@ def gather_image(
         uri,
         export_settings
     )
+
+    export_user_extensions('gather_image_hook', export_settings, image, blender_shader_sockets_or_texture_slots)
+
+    return image
 
 @cached
 def __make_image(buffer_view, extensions, extras, mime_type, name, uri, export_settings):
@@ -143,19 +148,6 @@ def __get_image_data(sockets_or_slots, export_settings) -> gltf2_blender_image.E
     # For shared resources, such as images, we just store the portion of data that is needed in the glTF property
     # in a helper class. During generation of the glTF in the exporter these will then be combined to actual binary
     # resources.
-    def split_pixels_by_channels(image: bpy.types.Image, export_settings) -> typing.Optional[typing.List[typing.List[float]]]:
-        channelcache = export_settings['gltf_channelcache']
-        if image.name in channelcache:
-            return channelcache[image.name]
-
-        pixels = np.array(image.pixels[:])
-        pixels = pixels.reshape((pixels.shape[0] // image.channels, image.channels))
-        channels = np.split(pixels, pixels.shape[1], axis=1)
-
-        channelcache[image.name] = channels
-
-        return channels
-
     if __is_socket(sockets_or_slots):
         results = [__get_tex_from_socket(socket, export_settings) for socket in sockets_or_slots]
         composed_image = None
