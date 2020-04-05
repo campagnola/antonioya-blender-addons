@@ -24,7 +24,26 @@ class BlenderGlTF():
 
     @staticmethod
     def create(gltf):
-        """Create glTF main method."""
+        """Create glTF main method, with optional profiling"""
+        profile = bpy.app.debug_value == 102
+        if profile:
+            import cProfile, pstats, io
+            from pstats import SortKey
+            pr = cProfile.Profile()
+            pr.enable()
+            BlenderGlTF._create(gltf)
+            pr.disable()
+            s = io.StringIO()
+            sortby = SortKey.TIME
+            ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+            ps.print_stats()
+            print(s.getvalue())
+        else:
+            BlenderGlTF._create(gltf)
+
+    @staticmethod
+    def _create(gltf):
+        """Create glTF main worker method."""
         BlenderGlTF.set_convert_functions(gltf)
         BlenderGlTF.pre_compute(gltf)
         BlenderScene.create(gltf)
@@ -96,20 +115,9 @@ class BlenderGlTF():
             # Something is wrong in file, there is no nodes
             return
 
-        for node_idx, node in enumerate(gltf.data.nodes):
-
+        for node in gltf.data.nodes:
             # Weight animation management
             node.weight_animation = False
-
-            # skin management
-            if node.skin is not None and node.mesh is not None:
-                if not hasattr(gltf.data.skins[node.skin], "node_ids"):
-                    gltf.data.skins[node.skin].node_ids = []
-
-                gltf.data.skins[node.skin].node_ids.append(node_idx)
-
-            # Lights management
-            node.correction_needed = False
 
         # Dispatch animation
         if gltf.data.animations:
@@ -138,8 +146,7 @@ class BlenderGlTF():
         # Meshes
         if gltf.data.meshes:
             for mesh in gltf.data.meshes:
-                mesh.blender_name = {}  # cache Blender mesh (keyed by skin_idx)
-                mesh.is_weight_animated = False
+                mesh.blender_name = {}  # caches Blender mesh name
 
         # Calculate names for each mesh's shapekeys
         for mesh in gltf.data.meshes or []:
@@ -191,4 +198,3 @@ class BlenderGlTF():
 
             suffix = '.%03d' % cntr
             cntr += 1
-

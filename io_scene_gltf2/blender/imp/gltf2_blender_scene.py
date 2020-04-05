@@ -16,7 +16,6 @@ import bpy
 from math import sqrt
 from mathutils import Quaternion
 from .gltf2_blender_node import BlenderNode
-from .gltf2_blender_skin import BlenderSkin
 from .gltf2_blender_animation import BlenderAnimation
 from .gltf2_blender_animation_utils import simulate_stash
 from .gltf2_blender_vnode import VNode, compute_vnodes
@@ -41,11 +40,6 @@ class BlenderScene():
 
         gltf.display_current_node = 0  # for debugging
         BlenderNode.create_vnode(gltf, 'root')
-
-        # Now that all mesh / bones are created, create vertex groups on mesh
-        if gltf.data.skins:
-            BlenderSkin.create_vertex_groups(gltf)
-            BlenderSkin.create_armature_modifiers(gltf)
 
         BlenderScene.create_animations(gltf)
 
@@ -77,18 +71,27 @@ class BlenderScene():
         """Make the first root object from the default glTF scene active.
         If no default scene, use the first scene, or just any root object.
         """
-        if gltf.data.scenes:
-            pyscene = gltf.data.scenes[gltf.data.scene or 0]
-            vnode = gltf.vnodes[pyscene.nodes[0]]
-            if gltf.vnodes[vnode.parent].type != VNode.DummyRoot:
-                vnode = gltf.vnodes[vnode.parent]
+        vnode = None
 
-        else:
+        if gltf.data.scene is not None:
+            pyscene = gltf.data.scenes[gltf.data.scene]
+            if pyscene.nodes:
+                vnode = gltf.vnodes[pyscene.nodes[0]]
+
+        if not vnode:
+            for pyscene in gltf.data.scenes or []:
+                if pyscene.nodes:
+                    vnode = gltf.vnodes[pyscene.nodes[0]]
+                    break
+
+        if not vnode:
             vnode = gltf.vnodes['root']
             if vnode.type == VNode.DummyRoot:
                 if not vnode.children:
                     return  # no nodes
                 vnode = gltf.vnodes[vnode.children[0]]
 
-        bpy.context.view_layer.objects.active = vnode.blender_object
+        if vnode.type == VNode.Bone:
+            vnode = gltf.vnodes[vnode.bone_arma]
 
+        bpy.context.view_layer.objects.active = vnode.blender_object

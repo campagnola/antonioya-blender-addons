@@ -990,6 +990,10 @@ def floor_raycast(context, mx, my):
 def is_rating_possible():
     ao = bpy.context.active_object
     ui = bpy.context.scene.blenderkitUI
+    preferences = bpy.context.preferences.addons['blenderkit'].preferences
+    #first test if user is logged in.
+    if preferences.api_key == '':
+        return False, False, None, None
     if bpy.context.scene.get('assets rated') is not None and ui.down_up == 'SEARCH':
         if bpy.context.mode in ('SCULPT', 'PAINT_TEXTURE'):
             b = utils.get_active_brush()
@@ -1096,9 +1100,7 @@ def interact_rating(r, mx, my, event):
                         bkit_ratings.rating_work_hours = wh
 
                 if event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
-                    if bkit_ratings.rating_quality > 0.1 or bkit_ratings.rating_work_hours > 0.1:
-                        ratings.upload_rating(asset)
-                    ui.last_rating_time = time.time()
+                    ui.last_rating_time = time.time() # this prop seems obsolete now?
                 return True
             else:
                 ui.rating_button_on = True
@@ -1283,15 +1285,11 @@ class AssetBarOperator(bpy.types.Operator):
             # we check again and quit if things weren't fixed this way.
             if newarea == None:
                 self.exit_modal()
-                ui_props.assetbar_on = False
                 return {'CANCELLED'}
 
         update_ui_size(self.area, self.region)
 
-        if context.region != self.region:
-            print(time.time(), 'pass through because of region')
-            print(context.region.type, self.region.type)
-            return {'PASS_THROUGH'}
+
 
         # this was here to check if sculpt stroke is running, but obviously that didn't help,
         #  since the RELEASE event is cought by operator and thus there is no way to detect a stroke has ended...
@@ -1307,11 +1305,15 @@ class AssetBarOperator(bpy.types.Operator):
         s = context.scene
 
         if ui_props.turn_off:
-            ui_props.assetbar_on = False
             ui_props.turn_off = False
             self.exit_modal()
             ui_props.draw_tooltip = False
             return {'CANCELLED'}
+
+        if context.region != self.region:
+            # print(time.time(), 'pass through because of region')
+            # print(context.region.type, self.region.type)
+            return {'PASS_THROUGH'}
 
         if ui_props.down_up == 'UPLOAD':
 
@@ -1504,8 +1506,8 @@ class AssetBarOperator(bpy.types.Operator):
                     asset_search_index = ui_props.active_index
                     asset_data = sr[asset_search_index]
                     if not asset_data['can_download']:
-                        message = 'Asset locked. Find out how to unlock Everything and ...'
-                        link_text = 'support all BlenderKit artists.'
+                        message = "Let's support asset creators and Blender development."
+                        link_text = 'Unlock the asset.'
                         url = paths.get_bkit_url() + '/get-blenderkit/' + asset_data['id'] + '/?from_addon'
                         bpy.ops.wm.blenderkit_url_dialog('INVOKE_REGION_WIN', url=url, message=message,
                                                          link_text=link_text)
@@ -1662,7 +1664,7 @@ class AssetBarOperator(bpy.types.Operator):
             else:
                 return {'RUNNING_MODAL'}
 
-        if event.type == 'W' and ui_props.active_index != -3:
+        if event.type == 'W' and ui_props.active_index > -1:
             sr = bpy.context.scene['search results']
             asset_data = sr[ui_props.active_index]
             a = bpy.context.window_manager['bkit authors'].get(asset_data['author_id'])
@@ -1671,7 +1673,7 @@ class AssetBarOperator(bpy.types.Operator):
                 if a.get('aboutMeUrl') is not None:
                     bpy.ops.wm.url_open(url=a['aboutMeUrl'])
             return {'RUNNING_MODAL'}
-        if event.type == 'A' and ui_props.active_index != -3:
+        if event.type == 'A' and ui_props.active_index > -1:
             sr = bpy.context.scene['search results']
             asset_data = sr[ui_props.active_index]
             a = asset_data['author_id']
@@ -1681,7 +1683,7 @@ class AssetBarOperator(bpy.types.Operator):
                 utils.p('author:', a)
                 search.search(author_id=a)
             return {'RUNNING_MODAL'}
-        if event.type == 'X' and ui_props.active_index != -3:
+        if event.type == 'X' and ui_props.active_index > -1:
             sr = bpy.context.scene['search results']
             asset_data = sr[ui_props.active_index]
             print(asset_data['name'])

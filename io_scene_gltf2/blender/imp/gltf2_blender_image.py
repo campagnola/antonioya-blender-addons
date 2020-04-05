@@ -52,13 +52,17 @@ class BlenderImage():
                 img_data, img_name = BinaryData.get_image_data(gltf, img_idx)
                 if img_data is None:
                     return
-                tmp_file = tempfile.NamedTemporaryFile(prefix='gltfimg', delete=False)
+                tmp_file = tempfile.NamedTemporaryFile(
+                    prefix='gltfimg-',
+                    suffix=_img_extension(img),
+                    delete=False,
+                )
                 tmp_file.write(img_data)
                 tmp_file.close()
                 path = tmp_file.name
 
             num_images = len(bpy.data.images)
-            blender_image = bpy.data.images.load(path, check_existing=img_from_file)
+            blender_image = bpy.data.images.load(os.path.abspath(path), check_existing=img_from_file)
             if len(bpy.data.images) != num_images:  # If created a new image
                 blender_image.name = img_name
                 if gltf.import_settings['import_pack_images'] or not img_from_file:
@@ -75,3 +79,9 @@ def _uri_to_path(uri):
     uri = urllib.parse.unquote(uri)
     return normpath(uri)
 
+def _img_extension(img):
+    if img.mime_type == 'image/png':
+        return '.png'
+    if img.mime_type == 'image/jpeg':
+        return '.jpg'
+    return None

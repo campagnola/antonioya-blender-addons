@@ -33,6 +33,7 @@ from io_scene_gltf2.io.com.gltf2_io_debug import print_console
 @cached
 def gather_primitives(
         blender_mesh: bpy.types.Mesh,
+        library: Optional[str],
         blender_object: Optional[bpy.types.Object],
         vertex_groups: Optional[bpy.types.VertexGroups],
         modifiers: Optional[bpy.types.ObjectModifiers],
@@ -46,7 +47,7 @@ def gather_primitives(
     """
     primitives = []
 
-    blender_primitives = __gather_cache_primitives(blender_mesh, blender_object,
+    blender_primitives = __gather_cache_primitives(blender_mesh, library, blender_object,
         vertex_groups, modifiers, export_settings)
 
     for internal_primitive in blender_primitives:
@@ -59,6 +60,8 @@ def gather_primitives(
             material = gltf2_blender_gather_materials.gather_material(blender_material,
                                                                   double_sided,
                                                                   export_settings)
+            # NOTE: gather_material may invalidate blender_mesh (see #932),
+            # so make sure not to access blender_mesh again after this point
         except IndexError:
             # no material at that index
             pass
@@ -80,6 +83,7 @@ def gather_primitives(
 @cached
 def __gather_cache_primitives(
         blender_mesh: bpy.types.Mesh,
+        library: Optional[str],
         blender_object: Optional[bpy.types.Object],
         vertex_groups: Optional[bpy.types.VertexGroups],
         modifiers: Optional[bpy.types.ObjectModifiers],
@@ -91,7 +95,7 @@ def __gather_cache_primitives(
     primitives = []
 
     blender_primitives = gltf2_blender_extract.extract_primitives(
-        None, blender_mesh, blender_object, vertex_groups, modifiers, export_settings)
+        None, blender_mesh, library, blender_object, vertex_groups, modifiers, export_settings)
 
     for internal_primitive in blender_primitives:
         primitive = {
@@ -232,4 +236,3 @@ def __gather_targets(blender_primitive, blender_mesh, modifiers, export_settings
                     morph_index += 1
         return targets
     return None
-

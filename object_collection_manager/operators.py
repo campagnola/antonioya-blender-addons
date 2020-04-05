@@ -35,6 +35,7 @@ from bpy.props import (
 from .internals import (
     expanded,
     layer_collections,
+    qcd_slots,
     update_property_group,
     get_modifiers,
     send_report,
@@ -52,6 +53,9 @@ rto_history = {
     "render": {},
     "render_all": {}
 }
+
+copy_buffer = {"RTO": "", "values": []}
+swap_buffer = {"A": {"RTO": "", "values": []}, "B": {"RTO": "", "values": []}}
 
 class ExpandAllOperator(Operator):
     '''Expand/Collapse all collections'''
@@ -73,8 +77,9 @@ class ExpandAllOperator(Operator):
         return {'FINISHED'}
 
 
+expand_history = {"target": "", "history": []}
 class ExpandSublevelOperator(Operator):
-    '''  * Shift-Click to expand/collapse all sublevels'''
+    '''  * Ctrl-Click to expand/collapse all sublevels\n  * Shift-Click to isolate/restore tree\n  * Alt-Click to discard history'''
     bl_label = "Expand Sublevel Items"
     bl_idname = "view3d.expand_sublevel"
     bl_options = {'REGISTER', 'UNDO'}
@@ -83,8 +88,21 @@ class ExpandSublevelOperator(Operator):
     name: StringProperty()
     index: IntProperty()
 
+    # static class var
+    isolated = False
+
     def invoke(self, context, event):
-        if event.shift:
+        global expand_history
+        cls = ExpandSublevelOperator
+
+        modifiers = get_modifiers(event)
+
+        if modifiers == {"alt"}:
+            expand_history["target"] = ""
+            expand_history["history"].clear()
+            cls.isolated = False
+
+        elif modifiers == {"ctrl"}:
             # expand/collapse all subcollections
             expand = None
 
@@ -111,6 +129,35 @@ class ExpandSublevelOperator(Operator):
 
             loop(layer_collections[self.name]["ptr"])
 
+            expand_history["target"] = ""
+            expand_history["history"].clear()
+            cls.isolated = False
+
+        elif modifiers == {"shift"}:
+            def isolate_tree(current_laycol):
+                parent = current_laycol["parent"]
+
+                for laycol in parent["children"]:
+                    if laycol["name"] != current_laycol["name"] and laycol["name"] in expanded:
+                        expanded.remove(laycol["name"])
+                        expand_history["history"].append(laycol["name"])
+
+                if parent["parent"]:
+                    isolate_tree(parent)
+
+            if cls.isolated:
+                for item in expand_history["history"]:
+                    expanded.append(item)
+
+                expand_history["target"] = ""
+                expand_history["history"].clear()
+                cls.isolated = False
+
+            else:
+                isolate_tree(layer_collections[self.name])
+                expand_history["target"] = self.name
+                cls.isolated = True
+
         else:
             # expand/collapse collection
             if self.expand:
@@ -118,9 +165,13 @@ class ExpandSublevelOperator(Operator):
             else:
                 expanded.remove(self.name)
 
+            expand_history["target"] = ""
+            expand_history["history"].clear()
+            cls.isolated = False
+
 
         # set selected row to the collection you're expanding/collapsing and update tree view
-        context.scene.CMListIndex = self.index
+        context.scene.collection_manager.cm_list_index = self.index
         update_property_group(context)
 
         return {'FINISHED'}
@@ -165,7 +216,7 @@ class CMSetCollectionOperator(Operator):
 
 
 class CMExcludeOperator(Operator):
-    '''  * Shift-Click to isolate/restore previous state\n  * Ctrl-Click to toggle children\n  * Shift-Ctrl-Click to toggle nested isolation'''
+    '''  * Shift-Click to isolate/restore previous state\n  * Ctrl-Click to toggle children\n  * Shift-Ctrl-Click to toggle nested isolation\n  * Alt-Click to discard history'''
     bl_label = "Exclude Collection from View Layer"
     bl_idname = "view3d.exclude_collection"
     bl_options = {'REGISTER', 'UNDO'}
@@ -189,10 +240,15 @@ class CMExcludeOperator(Operator):
         target = rto_history["exclude"][view_layer]["target"]
         exclude_history = rto_history["exclude"][view_layer]["history"]
 
-        if modifiers == {"shift"}:
+        if modifiers == {"alt"}:
+            del rto_history["exclude"][view_layer]
+            cls.isolated = False
+
+        elif modifiers == {"shift"}:
             # isolate/de-isolate exclusion of collections
 
-            active_layer_collections = [x["ptr"] for x in layer_collections.values() if not x["ptr"].exclude]
+            active_layer_collections = [x["ptr"] for x in layer_collections.values()
+                                        if not x["ptr"].exclude]
 
             # check if previous state should be restored
             if cls.isolated and self.name == target:
@@ -206,7 +262,8 @@ class CMExcludeOperator(Operator):
                 cls.isolated = False
 
             # check if all collections should be enabled
-            elif len(active_layer_collections) == 1 and active_layer_collections[0].name == self.name:
+            elif (len(active_layer_collections) == 1 and
+                  active_layer_collections[0].name == self.name):
                 # enable all collections
                 for item in layer_collections.values():
                     item["ptr"].exclude = False
@@ -360,20 +417,99 @@ class CMExcludeOperator(Operator):
 
 
 class CMUnExcludeAllOperator(Operator):
-    '''  * Click to toggle between current excluded state and all included.\n  * Shift-Click to invert excluded status of all collections'''
+    '''  * Click to toggle between current excluded state and all included.\n  * Shift-Click to invert excluded status of all collections\n  * Ctrl-Click to Copy/Paste RTOs\n  * Ctrl-Alt-Click to swap RTOs\n  * Alt-Click to discard history and copy/swap actions'''
     bl_label = "Toggle Excluded Status Of All Collections"
     bl_idname = "view3d.un_exclude_all_collections"
     bl_options = {'REGISTER', 'UNDO'}
 
     def invoke(self, context, event):
         global rto_history
+        global copy_buffer
+        global swap_buffer
 
         view_layer = context.view_layer.name
+        modifiers = get_modifiers(event)
 
         if not view_layer in rto_history["exclude_all"]:
             rto_history["exclude_all"][view_layer] = []
 
         exclude_all_history = rto_history["exclude_all"][view_layer]
+
+        if modifiers == {"alt"}:
+            # clear RTO history
+            del rto_history["exclude_all"][view_layer]
+
+            # clear copy buffer
+            if copy_buffer["RTO"] == "exclude":
+                copy_buffer["RTO"] = ""
+                copy_buffer["values"].clear()
+
+            # clear swap buffer
+            if swap_buffer["A"]["RTO"] == "exclude":
+                swap_buffer["A"]["RTO"] = ""
+                swap_buffer["A"]["values"].clear()
+                swap_buffer["B"]["RTO"] = ""
+                swap_buffer["B"]["values"].clear()
+
+            return {'FINISHED'}
+
+        if modifiers == {"ctrl"}:
+            if not copy_buffer["values"]:
+                # copy
+                copy_buffer["RTO"] = "exclude"
+                for laycol in layer_collections.values():
+                    copy_buffer["values"].append(laycol["ptr"].exclude)
+
+            else:
+                # paste
+                for x, laycol in enumerate(layer_collections.values()):
+                    laycol["ptr"].exclude = copy_buffer["values"][x]
+
+                # clear copy buffer
+                copy_buffer["RTO"] = ""
+                copy_buffer["values"].clear()
+
+            return {'FINISHED'}
+
+        if modifiers == {"ctrl", "alt"}:
+            if not swap_buffer["A"]["values"]:
+                # get A
+                swap_buffer["A"]["RTO"] = "exclude"
+                for laycol in layer_collections.values():
+                    swap_buffer["A"]["values"].append(laycol["ptr"].exclude)
+
+            else:
+                # get B
+                swap_buffer["B"]["RTO"] = "exclude"
+                for laycol in layer_collections.values():
+                    swap_buffer["B"]["values"].append(laycol["ptr"].exclude)
+
+                # swap A with B
+                for x, laycol in enumerate(layer_collections.values()):
+                    attr_A = attr_B = laycol["ptr"]
+
+                    # get attributes
+                    RTO_A = swap_buffer["A"]["RTO"].split(".")
+                    RTO_B = swap_buffer["B"]["RTO"].split(".")
+
+                    if RTO_A[0] == "collection":
+                        attr_A = getattr(attr_A, RTO_A[0])
+
+                    if RTO_B[0] == "collection":
+                        attr_B = getattr(attr_B, RTO_B[0])
+
+
+                    # swap values
+                    setattr(attr_A, RTO_A[-1], swap_buffer["B"]["values"][x])
+                    setattr(attr_B, RTO_B[-1], swap_buffer["A"]["values"][x])
+
+                # clear swap buffer
+                swap_buffer["A"]["RTO"] = ""
+                swap_buffer["A"]["values"].clear()
+                swap_buffer["B"]["RTO"] = ""
+                swap_buffer["B"]["values"].clear()
+
+            return {'FINISHED'}
 
         if len(exclude_all_history) == 0:
             exclude_all_history.clear()
@@ -411,7 +547,7 @@ class CMUnExcludeAllOperator(Operator):
 
 
 class CMRestrictSelectOperator(Operator):
-    '''  * Shift-Click to isolate/restore previous state\n  * Ctrl-Click to toggle children\n  * Shift-Ctrl-Click to toggle nested isolation'''
+    '''  * Shift-Click to isolate/restore previous state\n  * Ctrl-Click to toggle children\n  * Shift-Ctrl-Click to toggle nested isolation\n  * Alt-Click to discard history'''
     bl_label = "Disable Selection of Collection"
     bl_idname = "view3d.restrict_select_collection"
     bl_options = {'REGISTER', 'UNDO'}
@@ -435,14 +571,18 @@ class CMRestrictSelectOperator(Operator):
         target = rto_history["select"][view_layer]["target"]
         select_history = rto_history["select"][view_layer]["history"]
 
-        if modifiers == {"shift"}:
+        if modifiers == {"alt"}:
+            del rto_history["select"][view_layer]
+            cls.isolated = False
+
+        elif modifiers == {"shift"}:
             # isolate/de-isolate selectability of collections
 
             laycol = layer_collections[self.name]
 
             # get active collections
-            active_layer_collections = [x["ptr"] for x in layer_collections.values() \
-                                          if x["ptr"].collection.hide_select == False]
+            active_layer_collections = [x["ptr"] for x in layer_collections.values()
+                                        if x["ptr"].collection.hide_select == False]
 
             # check if previous state should be restored
             if cls.isolated and self.name == target:
@@ -456,7 +596,8 @@ class CMRestrictSelectOperator(Operator):
                 cls.isolated = False
 
             # check if all collections should be enabled
-            elif len(active_layer_collections) == 1 and active_layer_collections[0].name == self.name:
+            elif (len(active_layer_collections) == 1 and
+                  active_layer_collections[0].name == self.name):
                 # make all collections selectable
                 for item in layer_collections.values():
                     item["ptr"].collection.hide_select = False
@@ -602,37 +743,118 @@ class CMRestrictSelectOperator(Operator):
 
 
 class CMUnRestrictSelectAllOperator(Operator):
-    '''  * Click to toggle between current selectable state and all selectable.\n  * Shift-Click to invert selectable status of all collections'''
+    '''  * Click to toggle between current selectable state and all selectable.\n  * Shift-Click to invert selectable status of all collections\n  * Ctrl-Click to Copy/Paste RTOs\n  * Ctrl-Alt-Click to swap RTOs\n  * Alt-Click to discard history and copy/swap actions'''
     bl_label = "Toggle Selectable Status Of All Collections"
     bl_idname = "view3d.un_restrict_select_all_collections"
     bl_options = {'REGISTER', 'UNDO'}
 
     def invoke(self, context, event):
         global rto_history
+        global copy_buffer
+        global swap_buffer
 
         view_layer = context.view_layer.name
+        modifiers = get_modifiers(event)
 
         if not view_layer in rto_history["select_all"]:
             rto_history["select_all"][view_layer] = []
 
         select_all_history = rto_history["select_all"][view_layer]
 
+        if modifiers == {"alt"}:
+            # clear RTO history
+            del rto_history["select_all"][view_layer]
+
+            # clear copy buffer
+            if copy_buffer["RTO"] == "collection.hide_select":
+                copy_buffer["RTO"] = ""
+                copy_buffer["values"].clear()
+
+            # clear swap buffer
+            if swap_buffer["A"]["RTO"] == "collection.hide_select":
+                swap_buffer["A"]["RTO"] = ""
+                swap_buffer["A"]["values"].clear()
+                swap_buffer["B"]["RTO"] = ""
+                swap_buffer["B"]["values"].clear()
+
+            return {'FINISHED'}
+
+        if modifiers == {"ctrl"}:
+            if not copy_buffer["values"]:
+                # copy
+                copy_buffer["RTO"] = "collection.hide_select"
+                for laycol in layer_collections.values():
+                    copy_buffer["values"].append(laycol["ptr"].collection.hide_select)
+
+            else:
+                # paste
+                for x, laycol in enumerate(layer_collections.values()):
+                    laycol["ptr"].collection.hide_select = copy_buffer["values"][x]
+
+                # clear copy buffer
+                copy_buffer["RTO"] = ""
+                copy_buffer["values"].clear()
+
+            return {'FINISHED'}
+
+        if modifiers == {"ctrl", "alt"}:
+            if not swap_buffer["A"]["values"]:
+                # get A
+                swap_buffer["A"]["RTO"] = "collection.hide_select"
+                for laycol in layer_collections.values():
+                    swap_buffer["A"]["values"].append(laycol["ptr"].collection.hide_select)
+
+            else:
+                # get B
+                swap_buffer["B"]["RTO"] = "collection.hide_select"
+                for laycol in layer_collections.values():
+                    swap_buffer["B"]["values"].append(laycol["ptr"].collection.hide_select)
+
+                # swap A with B
+                for x, laycol in enumerate(layer_collections.values()):
+                    attr_A = attr_B = laycol["ptr"]
+
+                    # get attributes
+                    RTO_A = swap_buffer["A"]["RTO"].split(".")
+                    RTO_B = swap_buffer["B"]["RTO"].split(".")
+
+                    if RTO_A[0] == "collection":
+                        attr_A = getattr(attr_A, RTO_A[0])
+
+                    if RTO_B[0] == "collection":
+                        attr_B = getattr(attr_B, RTO_B[0])
+
+
+                    # swap values
+                    setattr(attr_A, RTO_A[-1], swap_buffer["B"]["values"][x])
+                    setattr(attr_B, RTO_B[-1], swap_buffer["A"]["values"][x])
+
+                # clear swap buffer
+                swap_buffer["A"]["RTO"] = ""
+                swap_buffer["A"]["values"].clear()
+                swap_buffer["B"]["RTO"] = ""
+                swap_buffer["B"]["values"].clear()
+
+            return {'FINISHED'}
+
         if len(select_all_history) == 0:
             select_all_history.clear()
             keep_history = False
 
             for item in layer_collections.values():
+                collection = item["ptr"].collection
+
                 if event.shift:
                     keep_history = True
-                    select_all_history.append(item["ptr"].collection.hide_select)
-                    item["ptr"].collection.hide_select = not item["ptr"].collection.hide_select
+                    select_all_history.append(collection.hide_select)
+                    collection.hide_select = not collection.hide_select
 
                 else:
-                    if item["ptr"].collection.hide_select:
+                    if collection.hide_select:
                         keep_history = True
 
-                    select_all_history.append(item["ptr"].collection.hide_select)
-                    item["ptr"].collection.hide_select = False
+                    select_all_history.append(collection.hide_select)
+                    collection.hide_select = False
 
             if not keep_history:
                 del rto_history["select_all"][view_layer]
@@ -647,7 +869,7 @@ class CMUnRestrictSelectAllOperator(Operator):
 
 
 class CMHideOperator(Operator):
-    '''  * Shift-Click to isolate/restore previous state\n  * Ctrl-Click to toggle children\n  * Shift-Ctrl-Click to toggle nested isolation'''
+    '''  * Shift-Click to isolate/restore previous state\n  * Ctrl-Click to toggle children\n  * Shift-Ctrl-Click to toggle nested isolation\n  * Alt-Click to discard history'''
     bl_label = "Hide Collection"
     bl_idname = "view3d.hide_collection"
     bl_options = {'REGISTER', 'UNDO'}
@@ -671,14 +893,18 @@ class CMHideOperator(Operator):
         target = rto_history["hide"][view_layer]["target"]
         hide_history = rto_history["hide"][view_layer]["history"]
 
-        if modifiers == {"shift"}:
+        if modifiers == {"alt"}:
+            del rto_history["hide"][view_layer]
+            cls.isolated = False
+
+        elif modifiers == {"shift"}:
             # isolate/de-isolate view of collections
 
             laycol = layer_collections[self.name]
 
             # get active collections
-            active_layer_collections = [x["ptr"] for x in layer_collections.values() \
-                                          if x["ptr"].hide_viewport == False]
+            active_layer_collections = [x["ptr"] for x in layer_collections.values()
+                                        if x["ptr"].hide_viewport == False]
 
             # check if previous state should be restored
             if cls.isolated and self.name == target:
@@ -692,7 +918,8 @@ class CMHideOperator(Operator):
                 cls.isolated = False
 
             # check if all collections should be enabled
-            elif len(active_layer_collections) == 1 and active_layer_collections[0].name == self.name:
+            elif (len(active_layer_collections) == 1 and
+                  active_layer_collections[0].name == self.name):
                 # show all collections
                 for laycol in layer_collections.values():
                     laycol["ptr"].hide_viewport = False
@@ -838,20 +1065,99 @@ class CMHideOperator(Operator):
 
 
 class CMUnHideAllOperator(Operator):
-    '''  * Click to toggle between current visibility state and all visible.\n  * Shift-Click to invert visibility status of all collections'''
+    '''  * Click to toggle between current visibility state and all visible.\n  * Shift-Click to invert visibility status of all collections\n  * Ctrl-Click to Copy/Paste RTOs\n  * Ctrl-Alt-Click to swap RTOs\n  * Alt-Click to discard history and copy/swap actions'''
     bl_label = "Toggle Hidden Status Of All Collections"
     bl_idname = "view3d.un_hide_all_collections"
     bl_options = {'REGISTER', 'UNDO'}
 
     def invoke(self, context, event):
         global rto_history
+        global copy_buffer
+        global swap_buffer
 
         view_layer = context.view_layer.name
+        modifiers = get_modifiers(event)
 
         if not view_layer in rto_history["hide_all"]:
             rto_history["hide_all"][view_layer] = []
 
         hide_all_history = rto_history["hide_all"][view_layer]
+
+        if modifiers == {"alt"}:
+            # clear RTO history
+            del rto_history["hide_all"][view_layer]
+
+            # clear copy buffer
+            if copy_buffer["RTO"] == "hide_viewport":
+                copy_buffer["RTO"] = ""
+                copy_buffer["values"].clear()
+
+            # clear swap buffer
+            if swap_buffer["A"]["RTO"] == "hide_viewport":
+                swap_buffer["A"]["RTO"] = ""
+                swap_buffer["A"]["values"].clear()
+                swap_buffer["B"]["RTO"] = ""
+                swap_buffer["B"]["values"].clear()
+
+            return {'FINISHED'}
+
+        if modifiers == {"ctrl"}:
+            if not copy_buffer["values"]:
+                # copy
+                copy_buffer["RTO"] = "hide_viewport"
+                for laycol in layer_collections.values():
+                    copy_buffer["values"].append(laycol["ptr"].hide_viewport)
+
+            else:
+                # paste
+                for x, laycol in enumerate(layer_collections.values()):
+                    laycol["ptr"].hide_viewport = copy_buffer["values"][x]
+
+                # clear copy buffer
+                copy_buffer["RTO"] = ""
+                copy_buffer["values"].clear()
+
+            return {'FINISHED'}
+
+        if modifiers == {"ctrl", "alt"}:
+            if not swap_buffer["A"]["values"]:
+                # get A
+                swap_buffer["A"]["RTO"] = "hide_viewport"
+                for laycol in layer_collections.values():
+                    swap_buffer["A"]["values"].append(laycol["ptr"].hide_viewport)
+
+            else:
+                # get B
+                swap_buffer["B"]["RTO"] = "hide_viewport"
+                for laycol in layer_collections.values():
+                    swap_buffer["B"]["values"].append(laycol["ptr"].hide_viewport)
+
+                # swap A with B
+                for x, laycol in enumerate(layer_collections.values()):
+                    attr_A = attr_B = laycol["ptr"]
+
+                    # get attributes
+                    RTO_A = swap_buffer["A"]["RTO"].split(".")
+                    RTO_B = swap_buffer["B"]["RTO"].split(".")
+
+                    if RTO_A[0] == "collection":
+                        attr_A = getattr(attr_A, RTO_A[0])
+
+                    if RTO_B[0] == "collection":
+                        attr_B = getattr(attr_B, RTO_B[0])
+
+
+                    # swap values
+                    setattr(attr_A, RTO_A[-1], swap_buffer["B"]["values"][x])
+                    setattr(attr_B, RTO_B[-1], swap_buffer["A"]["values"][x])
+
+                # clear swap buffer
+                swap_buffer["A"]["RTO"] = ""
+                swap_buffer["A"]["values"].clear()
+                swap_buffer["B"]["RTO"] = ""
+                swap_buffer["B"]["values"].clear()
+
+            return {'FINISHED'}
 
         if len(hide_all_history) == 0:
             hide_all_history.clear()
@@ -883,7 +1189,7 @@ class CMUnHideAllOperator(Operator):
 
 
 class CMDisableViewportOperator(Operator):
-    '''  * Shift-Click to isolate/restore previous state\n  * Ctrl-Click to toggle children\n  * Shift-Ctrl-Click to toggle nested isolation'''
+    '''  * Shift-Click to isolate/restore previous state\n  * Ctrl-Click to toggle children\n  * Shift-Ctrl-Click to toggle nested isolation\n  * Alt-Click to discard history'''
     bl_label = "Disable Collection in Viewport"
     bl_idname = "view3d.disable_viewport_collection"
     bl_options = {'REGISTER', 'UNDO'}
@@ -907,14 +1213,18 @@ class CMDisableViewportOperator(Operator):
         target = rto_history["disable"][view_layer]["target"]
         disable_history = rto_history["disable"][view_layer]["history"]
 
-        if modifiers == {"shift"}:
+        if modifiers == {"alt"}:
+            del rto_history["disable"][view_layer]
+            cls.isolated = False
+
+        elif modifiers == {"shift"}:
             # isolate/de-isolate disablement of collections in viewport
 
             laycol = layer_collections[self.name]
 
             # get active collections
-            active_layer_collections = [x["ptr"] for x in layer_collections.values() \
-                                          if x["ptr"].collection.hide_viewport == False]
+            active_layer_collections = [x["ptr"] for x in layer_collections.values()
+                                        if x["ptr"].collection.hide_viewport == False]
 
             # check if previous state should be restored
             if cls.isolated and self.name == target:
@@ -928,7 +1238,8 @@ class CMDisableViewportOperator(Operator):
                 cls.isolated = False
 
             # check if all collections should be enabled
-            elif len(active_layer_collections) == 1 and active_layer_collections[0].name == self.name:
+            elif (len(active_layer_collections) == 1 and
+                  active_layer_collections[0].name == self.name):
                 # enable all collections in viewport
                 for laycol in layer_collections.values():
                     laycol["ptr"].collection.hide_viewport = False
@@ -1074,38 +1385,118 @@ class CMDisableViewportOperator(Operator):
 
 
 class CMUnDisableViewportAllOperator(Operator):
-    '''  * Click to toggle between current viewport display and all enabled.\n  * Shift-Click to invert viewport display of all collections'''
+    '''  * Click to toggle between current viewport display and all enabled.\n  * Shift-Click to invert viewport display of all collections\n  * Ctrl-Click to Copy/Paste RTOs\n  * Ctrl-Alt-Click to swap RTOs\n  * Alt-Click to discard history and copy/swap actions'''
     bl_label = "Toggle Viewport Display of All Collections"
     bl_idname = "view3d.un_disable_viewport_all_collections"
     bl_options = {'REGISTER', 'UNDO'}
 
     def invoke(self, context, event):
         global rto_history
+        global copy_buffer
+        global swap_buffer
 
         view_layer = context.view_layer.name
+        modifiers = get_modifiers(event)
 
         if not view_layer in rto_history["disable_all"]:
             rto_history["disable_all"][view_layer] = []
 
         disable_all_history = rto_history["disable_all"][view_layer]
 
+        if modifiers == {"alt"}:
+            # clear RTO history
+            del rto_history["disable_all"][view_layer]
+
+            # clear copy buffer
+            if copy_buffer["RTO"] == "collection.hide_viewport":
+                copy_buffer["RTO"] = ""
+                copy_buffer["values"].clear()
+
+            # clear swap buffer
+            if swap_buffer["A"]["RTO"] == "collection.hide_viewport":
+                swap_buffer["A"]["RTO"] = ""
+                swap_buffer["A"]["values"].clear()
+                swap_buffer["B"]["RTO"] = ""
+                swap_buffer["B"]["values"].clear()
+
+            return {'FINISHED'}
+
+        if modifiers == {"ctrl"}:
+            if not copy_buffer["values"]:
+                # copy
+                copy_buffer["RTO"] = "collection.hide_viewport"
+                for laycol in layer_collections.values():
+                    copy_buffer["values"].append(laycol["ptr"].collection.hide_viewport)
+
+            else:
+                # paste
+                for x, laycol in enumerate(layer_collections.values()):
+                    laycol["ptr"].collection.hide_viewport = copy_buffer["values"][x]
+
+                # clear copy buffer
+                copy_buffer["RTO"] = ""
+                copy_buffer["values"].clear()
+
+            return {'FINISHED'}
+
+        if modifiers == {"ctrl", "alt"}:
+            if not swap_buffer["A"]["values"]:
+                # get A
+                swap_buffer["A"]["RTO"] = "collection.hide_viewport"
+                for laycol in layer_collections.values():
+                    swap_buffer["A"]["values"].append(laycol["ptr"].collection.hide_viewport)
+
+            else:
+                # get B
+                swap_buffer["B"]["RTO"] = "collection.hide_viewport"
+                for laycol in layer_collections.values():
+                    swap_buffer["B"]["values"].append(laycol["ptr"].collection.hide_viewport)
+
+                # swap A with B
+                for x, laycol in enumerate(layer_collections.values()):
+                    attr_A = attr_B = laycol["ptr"]
+
+                    # get attributes
+                    RTO_A = swap_buffer["A"]["RTO"].split(".")
+                    RTO_B = swap_buffer["B"]["RTO"].split(".")
+
+                    if RTO_A[0] == "collection":
+                        attr_A = getattr(attr_A, RTO_A[0])
+
+                    if RTO_B[0] == "collection":
+                        attr_B = getattr(attr_B, RTO_B[0])
+
+
+                    # swap values
+                    setattr(attr_A, RTO_A[-1], swap_buffer["B"]["values"][x])
+                    setattr(attr_B, RTO_B[-1], swap_buffer["A"]["values"][x])
+
+                # clear swap buffer
+                swap_buffer["A"]["RTO"] = ""
+                swap_buffer["A"]["values"].clear()
+                swap_buffer["B"]["RTO"] = ""
+                swap_buffer["B"]["values"].clear()
+
+            return {'FINISHED'}
+
         if len(disable_all_history) == 0:
             disable_all_history.clear()
             keep_history = False
 
             for item in layer_collections.values():
+                collection = item["ptr"].collection
+
                 if event.shift:
                     keep_history = True
-                    disable_all_history.append(item["ptr"].collection.hide_viewport)
-                    item["ptr"].collection.hide_viewport = not \
-                        item["ptr"].collection.hide_viewport
+                    disable_all_history.append(collection.hide_viewport)
+                    collection.hide_viewport = not collection.hide_viewport
 
                 else:
-                    if item["ptr"].collection.hide_viewport:
+                    if collection.hide_viewport:
                         keep_history = True
 
-                    disable_all_history.append(item["ptr"].collection.hide_viewport)
-                    item["ptr"].collection.hide_viewport = False
+                    disable_all_history.append(collection.hide_viewport)
+                    collection.hide_viewport = False
 
             if not keep_history:
                 del rto_history["disable_all"][view_layer]
@@ -1120,7 +1511,7 @@ class CMUnDisableViewportAllOperator(Operator):
 
 
 class CMDisableRenderOperator(Operator):
-    '''  * Shift-Click to isolate/restore previous state\n  * Ctrl-Click to toggle children\n  * Shift-Ctrl-Click to toggle nested isolation'''
+    '''  * Shift-Click to isolate/restore previous state\n  * Ctrl-Click to toggle children\n  * Shift-Ctrl-Click to toggle nested isolation\n  * Alt-Click to discard history'''
     bl_label = "Disable Collection in Render"
     bl_idname = "view3d.disable_render_collection"
     bl_options = {'REGISTER', 'UNDO'}
@@ -1144,14 +1535,19 @@ class CMDisableRenderOperator(Operator):
         target = rto_history["render"][view_layer]["target"]
         render_history = rto_history["render"][view_layer]["history"]
 
-        if modifiers == {"shift"}:
+
+        if modifiers == {"alt"}:
+            del rto_history["render"][view_layer]
+            cls.isolated = False
+
+        elif modifiers == {"shift"}:
             # isolate/de-isolate render of collections
 
             laycol = layer_collections[self.name]
 
             # get active collections
-            active_layer_collections = [x["ptr"] for x in layer_collections.values() \
-                                          if x["ptr"].collection.hide_render == False]
+            active_layer_collections = [x["ptr"] for x in layer_collections.values()
+                                        if x["ptr"].collection.hide_render == False]
 
             # check if previous state should be restored
             if cls.isolated and self.name == target:
@@ -1165,7 +1561,8 @@ class CMDisableRenderOperator(Operator):
                 cls.isolated = False
 
             # check if all collections should be enabled
-            elif len(active_layer_collections) == 1 and active_layer_collections[0].name == self.name:
+            elif (len(active_layer_collections) == 1 and
+                  active_layer_collections[0].name == self.name):
                 # allow render of all collections
                 for laycol in layer_collections.values():
                     laycol["ptr"].collection.hide_render = False
@@ -1311,38 +1708,118 @@ class CMDisableRenderOperator(Operator):
 
 
 class CMUnDisableRenderAllOperator(Operator):
-    '''  * Click to toggle between current render status and all rendered.\n  * Shift-Click to invert render status of all collections'''
+    '''  * Click to toggle between current render status and all rendered.\n  * Shift-Click to invert render status of all collections\n  * Ctrl-Click to Copy/Paste RTOs\n  * Ctrl-Alt-Click to swap RTOs\n  * Alt-Click to discard history and copy/swap actions'''
     bl_label = "Toggle Render Status of All Collections"
     bl_idname = "view3d.un_disable_render_all_collections"
     bl_options = {'REGISTER', 'UNDO'}
 
     def invoke(self, context, event):
         global rto_history
+        global copy_buffer
+        global swap_buffer
 
         view_layer = context.view_layer.name
+        modifiers = get_modifiers(event)
 
         if not view_layer in rto_history["render_all"]:
             rto_history["render_all"][view_layer] = []
 
         render_all_history = rto_history["render_all"][view_layer]
 
+        if modifiers == {"alt"}:
+            # clear RTO history
+            del rto_history["render_all"][view_layer]
+
+            # clear copy buffer
+            if copy_buffer["RTO"] == "collection.hide_render":
+                copy_buffer["RTO"] = ""
+                copy_buffer["values"].clear()
+
+            # clear swap buffer
+            if swap_buffer["A"]["RTO"] == "collection.hide_render":
+                swap_buffer["A"]["RTO"] = ""
+                swap_buffer["A"]["values"].clear()
+                swap_buffer["B"]["RTO"] = ""
+                swap_buffer["B"]["values"].clear()
+
+            return {'FINISHED'}
+
+        if modifiers == {"ctrl"}:
+            if not copy_buffer["values"]:
+                # copy
+                copy_buffer["RTO"] = "collection.hide_render"
+                for laycol in layer_collections.values():
+                    copy_buffer["values"].append(laycol["ptr"].collection.hide_render)
+
+            else:
+                # paste
+                for x, laycol in enumerate(layer_collections.values()):
+                    laycol["ptr"].collection.hide_render = copy_buffer["values"][x]
+
+                # clear copy buffer
+                copy_buffer["RTO"] = ""
+                copy_buffer["values"].clear()
+
+            return {'FINISHED'}
+
+        if modifiers == {"ctrl", "alt"}:
+            if not swap_buffer["A"]["values"]:
+                # get A
+                swap_buffer["A"]["RTO"] = "collection.hide_render"
+                for laycol in layer_collections.values():
+                    swap_buffer["A"]["values"].append(laycol["ptr"].collection.hide_render)
+
+            else:
+                # get B
+                swap_buffer["B"]["RTO"] = "collection.hide_render"
+                for laycol in layer_collections.values():
+                    swap_buffer["B"]["values"].append(laycol["ptr"].collection.hide_render)
+
+                # swap A with B
+                for x, laycol in enumerate(layer_collections.values()):
+                    attr_A = attr_B = laycol["ptr"]
+
+                    # get attributes
+                    RTO_A = swap_buffer["A"]["RTO"].split(".")
+                    RTO_B = swap_buffer["B"]["RTO"].split(".")
+
+                    if RTO_A[0] == "collection":
+                        attr_A = getattr(attr_A, RTO_A[0])
+
+                    if RTO_B[0] == "collection":
+                        attr_B = getattr(attr_B, RTO_B[0])
+
+
+                    # swap values
+                    setattr(attr_A, RTO_A[-1], swap_buffer["B"]["values"][x])
+                    setattr(attr_B, RTO_B[-1], swap_buffer["A"]["values"][x])
+
+                # clear swap buffer
+                swap_buffer["A"]["RTO"] = ""
+                swap_buffer["A"]["values"].clear()
+                swap_buffer["B"]["RTO"] = ""
+                swap_buffer["B"]["values"].clear()
+
+            return {'FINISHED'}
+
         if len(render_all_history) == 0:
             render_all_history.clear()
             keep_history = False
 
             for item in layer_collections.values():
+                collection = item["ptr"].collection
+
                 if event.shift:
                     keep_history = True
-                    render_all_history.append(item["ptr"].collection.hide_render)
-                    item["ptr"].collection.hide_render = not \
-                        item["ptr"].collection.hide_render
+                    render_all_history.append(collection.hide_render)
+                    collection.hide_render = not collection.hide_render
 
                 else:
-                    if item["ptr"].collection.hide_render:
+                    if collection.hide_render:
                         keep_history = True
 
-                    render_all_history.append(item["ptr"].collection.hide_render)
-                    item["ptr"].collection.hide_render = False
+                    render_all_history.append(collection.hide_render)
+                    collection.hide_render = False
 
             if not keep_history:
                 del rto_history["render_all"][view_layer]
@@ -1366,6 +1843,9 @@ class CMRemoveCollectionOperator(Operator):
 
     def execute(self, context):
         global rto_history
+        global qcd_slots
+
+        cm = context.scene.collection_manager
 
         laycol = layer_collections[self.collection_name]
         collection = laycol["ptr"].collection
@@ -1389,10 +1869,17 @@ class CMRemoveCollectionOperator(Operator):
         update_property_group(context)
 
 
-        if len(context.scene.CMListCollection) == context.scene.CMListIndex:
-            context.scene.CMListIndex = len(context.scene.CMListCollection) - 1
+        if len(cm.cm_list_collection) == cm.cm_list_index:
+            cm.cm_list_index = len(cm.cm_list_collection) - 1
             update_property_group(context)
 
+
+        # update qcd
+        if qcd_slots.contains(name=self.collection_name):
+            qcd_slots.del_slot(name=self.collection_name)
+
+        if self.collection_name in qcd_slots.overrides:
+            del qcd_slots.overrides[self.collection_name]
 
         # reset history
         for rto in rto_history.values():
@@ -1413,12 +1900,13 @@ class CMNewCollectionOperator(Operator):
         global rto_history
 
         new_collection = bpy.data.collections.new('Collection')
-        scn = context.scene
+        cm = context.scene.collection_manager
+
 
         # if there are collections
-        if len(scn.CMListCollection) > 0:
+        if len(cm.cm_list_collection) > 0:
             # get selected collection
-            laycol = layer_collections[scn.CMListCollection[scn.CMListIndex].name]
+            laycol = layer_collections[cm.cm_list_collection[cm.cm_list_index].name]
 
             # add new collection
             if self.child:
@@ -1428,7 +1916,7 @@ class CMNewCollectionOperator(Operator):
                 # update tree view property
                 update_property_group(context)
 
-                scn.CMListIndex = layer_collections[new_collection.name]["row_index"]
+                cm.cm_list_index = layer_collections[new_collection.name]["row_index"]
 
             else:
                 laycol["parent"]["ptr"].collection.children.link(new_collection)
@@ -1436,16 +1924,16 @@ class CMNewCollectionOperator(Operator):
                 # update tree view property
                 update_property_group(context)
 
-                scn.CMListIndex = layer_collections[new_collection.name]["row_index"]
+                cm.cm_list_index = layer_collections[new_collection.name]["row_index"]
 
         # if no collections add top level collection and select it
         else:
-            scn.collection.children.link(new_collection)
+            context.scene.collection.children.link(new_collection)
 
             # update tree view property
             update_property_group(context)
 
-            scn.CMListIndex = 0
+            cm.cm_list_index = 0
 
         global rename
         rename[0] = True
@@ -1482,18 +1970,18 @@ class CMPhantomModeOperator(Operator):
         global phantom_history
         global rto_history
 
-        scn = context.scene
-        view_layer = context.view_layer.name
+        cm = context.scene.collection_manager
+        view_layer = context.view_layer
 
         # enter Phantom Mode
-        if not scn.CM_Phantom_Mode:
+        if not cm.in_phantom_mode:
 
-            scn.CM_Phantom_Mode = True
+            cm.in_phantom_mode = True
 
             # save current visibility state
-            phantom_history["view_layer"] = view_layer
+            phantom_history["view_layer"] = view_layer.name
 
-            laycol_iter_list = [context.view_layer.layer_collection.children]
+            laycol_iter_list = [view_layer.layer_collection.children]
             while len(laycol_iter_list) > 0:
                 new_laycol_iter_list = []
                 for laycol_iter in laycol_iter_list:
@@ -1514,13 +2002,13 @@ class CMPhantomModeOperator(Operator):
 
             # save current rto history
             for rto, history, in rto_history.items():
-                if history.get(view_layer, None):
-                    phantom_history[rto+"_history"] = deepcopy(history[view_layer])
+                if history.get(view_layer.name, None):
+                    phantom_history[rto+"_history"] = deepcopy(history[view_layer.name])
 
 
         # return to normal mode
         else:
-            laycol_iter_list = [context.view_layer.layer_collection.children]
+            laycol_iter_list = [view_layer.layer_collection.children]
             while len(laycol_iter_list) > 0:
                 new_laycol_iter_list = []
                 for laycol_iter in laycol_iter_list:
@@ -1551,15 +2039,15 @@ class CMPhantomModeOperator(Operator):
 
             # restore previous rto history
             for rto, history, in rto_history.items():
-                if view_layer in history:
-                    del history[view_layer]
+                if view_layer.name in history:
+                    del history[view_layer.name]
 
                 if phantom_history[rto+"_history"]:
-                    history[view_layer] = deepcopy(phantom_history[rto+"_history"])
+                    history[view_layer.name] = deepcopy(phantom_history[rto+"_history"])
 
                 phantom_history[rto+"_history"].clear()
 
-            scn.CM_Phantom_Mode = False
+            cm.in_phantom_mode = False
 
 
         return {'FINISHED'}

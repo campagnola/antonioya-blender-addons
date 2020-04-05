@@ -18,6 +18,8 @@
 
 # Copyright 2011, Ryan Inch
 
+from . import persistent_data
+
 import bpy
 
 from bpy.types import (
@@ -25,50 +27,235 @@ from bpy.types import (
     Operator,
 )
 
-from bpy.props import StringProperty
+from bpy.props import (
+    StringProperty,
+    IntProperty,
+)
 
 layer_collections = {}
-
 collection_tree = []
-
+collection_state = {}
 expanded = []
-
-max_lvl = 0
 row_index = 0
 
+max_lvl = 0
 def get_max_lvl():
     return max_lvl
 
+
+class QCDSlots():
+    _slots = {}
+    overrides = {}
+    allow_update = True
+
+    def __init__(self):
+        self._slots = persistent_data.slots
+        self.overrides = persistent_data.overrides
+
+    def __iter__(self):
+        return self._slots.items().__iter__()
+
+    def __repr__(self):
+        return self._slots.__repr__()
+
+    def contains(self, *, idx=None, name=None):
+        if idx:
+            return idx in self._slots.keys()
+
+        if name:
+            return name in self._slots.values()
+
+        raise
+
+    def get_data_for_blend(self):
+        return f"{self._slots.__repr__()}\n{self.overrides.__repr__()}"
+
+    def load_blend_data(self, data):
+        decoupled_data = data.split("\n")
+        blend_slots = eval(decoupled_data[0])
+        blend_overrides = eval(decoupled_data[1])
+
+        self._slots.clear()
+        self.overrides.clear()
+
+        for key, value in blend_slots.items():
+            self._slots[key] = value
+
+        for key, value in blend_overrides.items():
+            self.overrides[key] = value
+
+    def length(self):
+        return len(self._slots)
+
+    def get_idx(self, name, r_value=None):
+        for idx, slot_name in self._slots.items():
+            if slot_name == name:
+                return idx
+
+        return r_value
+
+    def get_name(self, idx, r_value=None):
+        if idx in self._slots:
+            return self._slots[idx]
+
+        return r_value
+
+    def add_slot(self, idx, name):
+        self._slots[idx] = name
+
+        if name in self.overrides:
+            del self.overrides[name]
+
+    def update_slot(self, idx, name):
+        self.add_slot(idx, name)
+
+    def del_slot(self, *, idx=None, name=None):
+        if idx and not name:
+            del self._slots[idx]
+            return
+
+        if name and not idx:
+            slot_idx = self.get_idx(name)
+            del self._slots[slot_idx]
+            return
+
+        raise
+
+    def add_override(self, name):
+        qcd_slots.del_slot(name=name)
+        qcd_slots.overrides[name] = True
+
+    def clear_slots(self):
+        self._slots.clear()
+
+    def update_qcd(self):
+        for idx, name in list(self._slots.items()):
+            if not layer_collections.get(name, None):
+                qcd_slots.del_slot(name=name)
+
+    def auto_numerate(self, *, renumerate=False):
+        global max_lvl
+
+        if self.length() < 20:
+            lvl = 0
+            num = 1
+            while lvl <= max_lvl:
+                if num > 20:
+                    break
+
+                for laycol in layer_collections.values():
+                    if num > 20:
+                        break
+
+                    if int(laycol["lvl"]) == lvl:
+                        if laycol["name"] in qcd_slots.overrides:
+                            if not renumerate:
+                                num += 1
+                            continue
+
+                        if (not self.contains(idx=str(num)) and
+                            not self.contains(name=laycol["name"])):
+                                self.add_slot(str(num), laycol["name"])
+
+                        num += 1
+
+                lvl += 1
+
+qcd_slots = QCDSlots()
+
+
 def update_col_name(self, context):
+    global layer_collections
+    global qcd_slots
+
     if self.name != self.last_name:
         if self.name == '':
             self.name = self.last_name
             return
 
         if self.last_name != '':
+            # update collection name
             layer_collections[self.last_name]["ptr"].collection.name = self.name
+
+            # update qcd_slot
+            idx = qcd_slots.get_idx(self.last_name)
+            if idx:
+                qcd_slots.update_slot(idx, self.name)
 
             update_property_group(context)
 
         self.last_name = self.name
 
+def update_qcd_slot(self, context):
+    global qcd_slots
+
+    if not qcd_slots.allow_update:
+        return
+
+    update_needed = False
+
+    try:
+        int(self.qcd_slot_idx)
+
+    except ValueError:
+        if self.qcd_slot_idx == "":
+            qcd_slots.add_override(self.name)
+
+        if qcd_slots.contains(name=self.name):
+            qcd_slots.allow_update = False
+            self.qcd_slot_idx = qcd_slots.get_idx(self.name)
+            qcd_slots.allow_update = True
+
+        if self.name in qcd_slots.overrides:
+            qcd_slots.allow_update = False
+            self.qcd_slot_idx = ""
+            qcd_slots.allow_update = True
+
+        return
+
+    if qcd_slots.contains(name=self.name):
+        qcd_slots.del_slot(name=self.name)
+        update_needed = True
+
+    if qcd_slots.contains(idx=self.qcd_slot_idx):
+        qcd_slots.add_override(qcd_slots.get_name(self.qcd_slot_idx))
+        update_needed = True
+
+    if int(self.qcd_slot_idx) > 20:
+        self.qcd_slot_idx = "20"
+
+    if int(self.qcd_slot_idx) < 1:
+        self.qcd_slot_idx = "1"
+
+    qcd_slots.add_slot(self.qcd_slot_idx, self.name)
+
+    if update_needed:
+        update_property_group(context)
+
+
 class CMListCollection(PropertyGroup):
     name: StringProperty(update=update_col_name)
     last_name: StringProperty()
+    qcd_slot_idx: StringProperty(name="QCD Slot", update=update_qcd_slot)
 
 
-def update_collection_tree(context):
+def update_collection_tree(context, *, renumerate_qcd=False):
     global max_lvl
     global row_index
+    global collection_tree
+    global layer_collections
+    global qcd_slots
+
     collection_tree.clear()
     layer_collections.clear()
+
     max_lvl = 0
     row_index = 0
-
-    init_laycol_list = context.view_layer.layer_collection.children
+    layer_collection = context.view_layer.layer_collection
+    init_laycol_list = layer_collection.children
 
     master_laycol = {"id": 0,
-                     "name": context.view_layer.layer_collection.name,
+                     "name": layer_collection.name,
                      "lvl": -1,
                      "row_index": -1,
                      "visible": True,
@@ -76,10 +263,17 @@ def update_collection_tree(context):
                      "expanded": True,
                      "parent": None,
                      "children": [],
-                     "ptr": context.view_layer.layer_collection
+                     "ptr": layer_collection
                      }
 
-    get_all_collections(context, init_laycol_list, master_laycol, collection_tree, visible=True)
+    get_all_collections(context, init_laycol_list, master_laycol, master_laycol["children"], visible=True)
+
+    for laycol in master_laycol["children"]:
+        collection_tree.append(laycol)
+
+    qcd_slots.update_qcd()
+
+    qcd_slots.auto_numerate(renumerate=renumerate_qcd)
 
 
 def get_all_collections(context, collections, parent, tree, level=0, visible=False):
@@ -118,18 +312,29 @@ def get_all_collections(context, collections, parent, tree, level=0, visible=Fal
                 get_all_collections(context, item.children, laycol, laycol["children"], level+1)
 
 
-def update_property_group(context):
-    update_collection_tree(context)
-    context.scene.CMListCollection.clear()
+def update_property_group(context, *, renumerate_qcd=False):
+    global collection_tree
+    global qcd_slots
+
+    qcd_slots.allow_update = False
+
+    update_collection_tree(context, renumerate_qcd=renumerate_qcd)
+    context.scene.collection_manager.cm_list_collection.clear()
     create_property_group(context, collection_tree)
+
+    qcd_slots.allow_update = True
 
 
 def create_property_group(context, tree):
     global in_filter
+    global qcd_slots
+
+    cm = context.scene.collection_manager
 
     for laycol in tree:
-        new_cm_listitem = context.scene.CMListCollection.add()
+        new_cm_listitem = cm.cm_list_collection.add()
         new_cm_listitem.name = laycol["name"]
+        new_cm_listitem.qcd_slot_idx = qcd_slots.get_idx(laycol["name"], "")
 
         if laycol["has_children"]:
             create_property_group(context, laycol["children"])
@@ -151,6 +356,29 @@ def get_modifiers(event):
         modifiers.append("shift")
 
     return set(modifiers)
+
+def generate_state():
+    global layer_collections
+
+    state = {
+        "name": [],
+        "exclude": [],
+        "select": [],
+        "hide": [],
+        "disable": [],
+        "render": [],
+        }
+
+    for name, laycol in layer_collections.items():
+        state["name"].append(name)
+        state["exclude"].append(laycol["ptr"].exclude)
+        state["select"].append(laycol["ptr"].collection.hide_select)
+        state["hide"].append(laycol["ptr"].hide_viewport)
+        state["disable"].append(laycol["ptr"].collection.hide_viewport)
+        state["render"].append(laycol["ptr"].collection.hide_render)
+
+    return state
+
 
 
 class CMSendReport(Operator):
@@ -214,4 +442,3 @@ def send_report(message):
         bpy.ops.view3d.cm_send_report(ctx, 'INVOKE_DEFAULT', message=message)
 
     bpy.app.timers.register(report)
-

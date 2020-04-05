@@ -24,8 +24,7 @@ bl_info = {
     "location": "View3D > Properties > BlenderKit",
     "description": "Online BlenderKit library (materials, models, brushes and more)",
     "warning": "",
-    "wiki_url": "https://youtu.be/1hVgcQhIAo8"
-                "Scripts/Add_Mesh/BlenderKit",
+    "doc_url": "{BLENDER_MANUAL_URL}/addons/add_mesh/blenderkit.html",
     "category": "3D View",
 }
 
@@ -93,7 +92,7 @@ def scene_load(context):
     preferences = bpy.context.preferences.addons['blenderkit'].preferences
     preferences.login_attempt = False
 
-
+@bpy.app.handlers.persistent
 def check_timers_timer():
     ''' checks if all timers are registered regularly. Prevents possible bugs from stopping the addon.'''
     if not bpy.app.timers.is_registered(search.timer_update):
@@ -1527,6 +1526,12 @@ class BlenderKitAddonPreferences(AddonPreferences):
                                min=0,
                                max=20000)
 
+    first_run: BoolProperty(
+        name="First run",
+        description="Detects if addon was already registered/run.",
+        default=True,
+        update=utils.save_prefs
+    )
     # allow_proximity : BoolProperty(
     #     name="allow proximity data reports",
     #     description="This sends anonymized proximity data \n \

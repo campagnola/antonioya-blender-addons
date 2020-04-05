@@ -14,6 +14,9 @@
 
 import bpy
 from mathutils import Vector, Quaternion, Matrix
+from ...io.imp.gltf2_io_binary import BinaryData
+
+from ..com.gltf2_blender_math import scale_rot_swap_matrix, nearby_signed_perm_matrix
 
 def compute_vnodes(gltf):
     """Computes the tree of virtual nodes.
@@ -25,6 +28,8 @@ def compute_vnodes(gltf):
     move_skinned_meshes(gltf)
     fixup_multitype_nodes(gltf)
     correct_cameras_and_lights(gltf)
+    pick_bind_pose(gltf)
+    prettify_bones(gltf)
     calc_bone_matrices(gltf)
 
 
@@ -44,16 +49,59 @@ class VNode:
         self.parent = None
         self.type = VNode.Object
         self.is_arma = False
-        self.trs = (
+        self.base_trs = (
             Vector((0, 0, 0)),
             Quaternion((1, 0, 0, 0)),
             Vector((1, 1, 1)),
         )
+        # Additional rotations before/after the base TRS.
+        # Allows per-vnode axis adjustment. See local_rotation.
+        self.rotation_after = Quaternion((1, 0, 0, 0))
+        self.rotation_before = Quaternion((1, 0, 0, 0))
+
         # Indices of the glTF node where the mesh, etc. came from.
         # (They can get moved around.)
         self.mesh_node_idx = None
         self.camera_node_idx = None
         self.light_node_idx = None
+
+    def trs(self):
+        # (final TRS) = (rotation after) (base TRS) (rotation before)
+        t, r, s = self.base_trs
+        m = scale_rot_swap_matrix(self.rotation_before)
+        return (
+            self.rotation_after @ t,
+            self.rotation_after @ r @ self.rotation_before,
+            m @ s,
+        )
+
+    def base_locs_to_final_locs(self, base_locs):
+        ra = self.rotation_after
+        return [ra @ loc for loc in base_locs]
+
+    def base_rots_to_final_rots(self, base_rots):
+        ra, rb = self.rotation_after, self.rotation_before
+        return [ra @ rot @ rb for rot in base_rots]
+
+    def base_scales_to_final_scales(self, base_scales):
+        m = scale_rot_swap_matrix(self.rotation_before)
+        return [m @ scale for scale in base_scales]
+
+def local_rotation(gltf, vnode_id, rot):
+    """Appends a local rotation to vnode's world transform:
+    (new world transform) = (old world transform) @ (rot)
+    without changing the world transform of vnode's children.
+
+    For correctness, rot must be a signed permutation of the axes
+    (eg. (X Y Z)->(X -Z Y)) OR vnode's scale must always be uniform.
+    """
+    gltf.vnodes[vnode_id].rotation_before @= rot
+
+    # Append the inverse rotation after children's TRS to cancel it out.
+    rot_inv = rot.conjugated()
+    for child in gltf.vnodes[vnode_id].children:
+        gltf.vnodes[child].rotation_after = \
+            rot_inv @ gltf.vnodes[child].rotation_after
 
 
 def init_vnodes(gltf):
@@ -66,7 +114,7 @@ def init_vnodes(gltf):
         gltf.vnodes[i] = vnode
         vnode.name = pynode.name or 'Node_%d' % i
         vnode.children = list(pynode.children or [])
-        vnode.trs = get_node_trs(gltf, pynode)
+        vnode.base_trs = get_node_trs(gltf, pynode)
         if pynode.mesh is not None:
             vnode.mesh_node_idx = i
         if pynode.camera is not None:
@@ -181,7 +229,7 @@ def move_skinned_meshes(gltf):
      * Move a skinned mesh to become a child of the armature that skins it.
        Have to ensure the mesh and arma have the same world transform.
      * When we do mesh creation, we will also need to put all the verts in
-       their rest pose (ie. the pose the edit bones are in)
+       the bind pose in arma space.
     """
     ids = list(gltf.vnodes.keys())
     for id in ids:
@@ -215,7 +263,7 @@ def move_skinned_meshes(gltf):
         )
         if ok_to_move:
             reparent(gltf, id, new_parent=arma)
-            vnode.trs = (
+            vnode.base_trs = (
                 Vector((0, 0, 0)),
                 Quaternion((1, 0, 0, 0)),
                 Vector((1, 1, 1)),
@@ -303,59 +351,178 @@ def correct_cameras_and_lights(gltf):
     if gltf.camera_correction is None:
         return
 
-    trs = (Vector((0, 0, 0)), gltf.camera_correction, Vector((1, 1, 1)))
+    for id, vnode in gltf.vnodes.items():
+        needs_correction = \
+           vnode.camera_node_idx is not None or \
+           vnode.light_node_idx is not None
 
-    ids = list(gltf.vnodes.keys())
-    for id in ids:
-        vnode = gltf.vnodes[id]
+        if needs_correction:
+            local_rotation(gltf, id, gltf.camera_correction)
 
-        # Move the camera/light onto a new child and set its rotation
-        # TODO: "hard apply" the rotation without creating a new node
-        #       (like we'll need to do for bones)
 
-        if vnode.camera_node_idx is not None:
-            new_id = str(id) + '.camera-correction'
-            gltf.vnodes[new_id] = VNode()
-            gltf.vnodes[new_id].name = vnode.name + ' Correction'
-            gltf.vnodes[new_id].trs = trs
-            gltf.vnodes[new_id].camera_node_idx = vnode.camera_node_idx
-            gltf.vnodes[new_id].parent = id
-            vnode.children.append(new_id)
-            vnode.camera_node_idx = None
+def pick_bind_pose(gltf):
+    """
+    Pick the bind pose for all bones. Skinned meshes will be retargeted onto
+    this bind pose during mesh creation.
+    """
+    if gltf.import_settings['guess_original_bind_pose']:
+        # Record inverse bind matrices. We're going to milk them for information
+        # about the original bind pose.
+        inv_binds = {'root': Matrix.Identity(4)}
+        for skin in gltf.data.skins or []:
+            if skin.inverse_bind_matrices is None:
+                continue
 
-        if vnode.light_node_idx is not None:
-            new_id = str(id) + '.light-correction'
-            gltf.vnodes[new_id] = VNode()
-            gltf.vnodes[new_id].name = vnode.name + ' Correction'
-            gltf.vnodes[new_id].trs = trs
-            gltf.vnodes[new_id].light_node_idx = vnode.light_node_idx
-            gltf.vnodes[new_id].parent = id
-            vnode.children.append(new_id)
-            vnode.light_node_idx = None
+            # Assume inverse bind matrices are calculated relative to the skeleton
+            skel = skin.skeleton
+            if skel is not None:
+                if skel in skin.joints:
+                    skel = gltf.vnodes[skel].parent
+                if skel not in inv_binds:
+                    inv_binds[skel] = Matrix.Identity(4)
+
+            skin_inv_binds = BinaryData.get_data_from_accessor(gltf, skin.inverse_bind_matrices)
+            skin_inv_binds = [gltf.matrix_gltf_to_blender(m) for m in skin_inv_binds]
+            for i, joint in enumerate(skin.joints):
+                inv_binds[joint] = skin_inv_binds[i]
+
+    for vnode_id in gltf.vnodes:
+        vnode = gltf.vnodes[vnode_id]
+        if vnode.type == VNode.Bone:
+            # Initialize bind pose to default pose (from gltf.data.nodes)
+            vnode.bind_trans = Vector(vnode.base_trs[0])
+            vnode.bind_rot = Quaternion(vnode.base_trs[1])
+
+            if gltf.import_settings['guess_original_bind_pose']:
+                # Try to guess bind pose from inverse bind matrices
+                if vnode_id in inv_binds and vnode.parent in inv_binds:
+                    # (bind matrix) = (parent bind matrix) (bind local). Solve for bind local...
+                    bind_local = inv_binds[vnode.parent] @ inv_binds[vnode_id].inverted_safe()
+                    t, r, _s = bind_local.decompose()
+                    vnode.bind_trans = t
+                    vnode.bind_rot = r
+
+            # Initialize editbones to match bind pose
+            vnode.editbone_trans = Vector(vnode.bind_trans)
+            vnode.editbone_rot = Quaternion(vnode.bind_rot)
+
+
+def prettify_bones(gltf):
+    """
+    Prettify bone lengths/directions.
+    """
+    def visit(vnode_id, parent_rot=None):  # Depth-first walk
+        vnode = gltf.vnodes[vnode_id]
+        rot = None
+
+        if vnode.type == VNode.Bone:
+            vnode.bone_length = pick_bone_length(gltf, vnode_id)
+            rot = pick_bone_rotation(gltf, vnode_id, parent_rot)
+            if rot is not None:
+                rotate_edit_bone(gltf, vnode_id, rot)
+
+        for child in vnode.children:
+            visit(child, parent_rot=rot)
+
+    visit('root')
+
+MIN_BONE_LENGTH = 0.004  # too small and bones get deleted
+
+def pick_bone_length(gltf, bone_id):
+    """Heuristic for bone length."""
+    vnode = gltf.vnodes[bone_id]
+
+    child_locs = [
+        gltf.vnodes[child].editbone_trans
+        for child in vnode.children
+        if gltf.vnodes[child].type == VNode.Bone
+    ]
+    child_locs = [loc for loc in child_locs if loc.length > MIN_BONE_LENGTH]
+    if child_locs:
+        return min(loc.length for loc in child_locs)
+
+    if gltf.vnodes[vnode.parent].type == VNode.Bone:
+        return gltf.vnodes[vnode.parent].bone_length
+
+    if vnode.editbone_trans.length > MIN_BONE_LENGTH:
+        return vnode.editbone_trans.length
+
+    return 1
+
+def pick_bone_rotation(gltf, bone_id, parent_rot):
+    """Heuristic for bone rotation.
+    A bone's tip lies on its local +Y axis so rotating a bone let's us
+    adjust the bone direction.
+    """
+    if bpy.app.debug_value == 100:
+        return None
+
+    if gltf.import_settings['bone_heuristic'] == 'BLENDER':
+        return Quaternion((2**0.5/2, 2**0.5/2, 0, 0))
+    elif gltf.import_settings['bone_heuristic'] in ['TEMPERANCE', 'FORTUNE']:
+        return temperance(gltf, bone_id, parent_rot)
+
+def temperance(gltf, bone_id, parent_rot):
+    vnode = gltf.vnodes[bone_id]
+
+    # Try to put our tip at the centroid of our children
+    child_locs = [
+        gltf.vnodes[child].editbone_trans
+        for child in vnode.children
+        if gltf.vnodes[child].type == VNode.Bone
+    ]
+    child_locs = [loc for loc in child_locs if loc.length > MIN_BONE_LENGTH]
+    if child_locs:
+        centroid = sum(child_locs, Vector((0, 0, 0)))
+        rot = Vector((0, 1, 0)).rotation_difference(centroid)
+        if gltf.import_settings['bone_heuristic'] == 'TEMPERANCE':
+            # Snap to the local axes; required for local_rotation to be
+            # accurate when vnode has a non-uniform scaling.
+            # FORTUNE skips this, so it may look better, but may have errors.
+            rot = nearby_signed_perm_matrix(rot).to_quaternion()
+        return rot
+
+    return parent_rot
+
+def rotate_edit_bone(gltf, bone_id, rot):
+    """Rotate one edit bone without affecting anything else."""
+    gltf.vnodes[bone_id].editbone_rot @= rot
+    # Cancel out the rotation so children aren't affected.
+    rot_inv = rot.conjugated()
+    for child_id in gltf.vnodes[bone_id].children:
+        child = gltf.vnodes[child_id]
+        if child.type == VNode.Bone:
+            child.editbone_trans = rot_inv @ child.editbone_trans
+            child.editbone_rot = rot_inv @ child.editbone_rot
+    # Need to rotate the bone's final TRS by the same amount so skinning
+    # isn't affected.
+    local_rotation(gltf, bone_id, rot)
 
 
 def calc_bone_matrices(gltf):
     """
-    Calculate bone_arma_mat, the transformation from bone space to armature
-    space for the edit bone, for each bone.
+    Calculate the transformations from bone space to arma space in the bind
+    pose and in the edit bone pose.
     """
     def visit(vnode_id):  # Depth-first walk
         vnode = gltf.vnodes[vnode_id]
         if vnode.type == VNode.Bone:
             if gltf.vnodes[vnode.parent].type == VNode.Bone:
-                parent_arma_mat = gltf.vnodes[vnode.parent].bone_arma_mat
+                parent_bind_mat = gltf.vnodes[vnode.parent].bind_arma_mat
+                parent_editbone_mat = gltf.vnodes[vnode.parent].editbone_arma_mat
             else:
-                parent_arma_mat = Matrix.Identity(4)
+                parent_bind_mat = Matrix.Identity(4)
+                parent_editbone_mat = Matrix.Identity(4)
 
-            t, r, _ = vnode.trs
+            t, r = vnode.bind_trans, vnode.bind_rot
             local_to_parent = Matrix.Translation(t) @ Quaternion(r).to_matrix().to_4x4()
-            vnode.bone_arma_mat = parent_arma_mat @ local_to_parent
+            vnode.bind_arma_mat = parent_bind_mat @ local_to_parent
+
+            t, r = vnode.editbone_trans, vnode.editbone_rot
+            local_to_parent = Matrix.Translation(t) @ Quaternion(r).to_matrix().to_4x4()
+            vnode.editbone_arma_mat = parent_editbone_mat @ local_to_parent
 
         for child in vnode.children:
             visit(child)
 
     visit('root')
-
-
-# TODO: add pass to rotate/resize bones so they look pretty
-

@@ -102,7 +102,7 @@ bl_info = {
     "blender": (2, 81, 0),
     "location": "Render Properties > Render Engine > Persistence of Vision",
     "description": "Persistence of Vision integration for blender",
-    "wiki_url": "https://docs.blender.org/manual/en/dev/addons/render/povray.html",
+    "doc_url": "{BLENDER_MANUAL_URL}/addons/render/povray.html",
     "category": "Render",
 }
 
@@ -579,17 +579,17 @@ class RenderPovSettingsScene(PropertyGroup):
         options={'ANIMATABLE'},
         subtype='COLOR'
     )
-
-    charset: EnumProperty(
-        name="Charset",
-        description="This allows you to specify the assumed character set of all text strings",
-        items=(
-            ("ascii", "ASCII", ""),
-            ("utf8", "UTF-8", ""),
-            ("sys", "SYS", "")
-        ),
-        default="utf8",
-    )
+    # Deprecated (autodetected in pov3.8):
+    # charset: EnumProperty(
+        # name="Charset",
+        # description="This allows you to specify the assumed character set of all text strings",
+        # items=(
+            # ("ascii", "ASCII", ""),
+            # ("utf8", "UTF-8", ""),
+            # ("sys", "SYS", "")
+        # ),
+        # default="utf8",
+    # )
 
     max_intersections_enable: BoolProperty(
         name="Enable",

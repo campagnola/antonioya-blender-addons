@@ -22,14 +22,14 @@
 bl_info = {
     "name": "Geodesic Domes",
     "author": "Andy Houston",
-    "version": (0, 3, 5),
+    "version": (0, 3, 6),
     "blender": (2, 80, 0),
     "location": "View3D > Add > Mesh",
     "description": "Create geodesic dome type objects.",
     "warning": "",
-    "wiki_url": "https://docs.blender.org/manual/en/dev/addons/"
-                "add_mesh/geodesic_domes.html",
-    "category": "Add Mesh"}
+    "doc_url": "{BLENDER_MANUAL_URL}/addons/add_mesh/geodesic_domes.html",
+    "category": "Add Mesh",
+}
 
 if "bpy" in locals():
     import importlib

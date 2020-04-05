@@ -131,40 +131,50 @@ first_time = True
 last_clipboard = ''
 
 
-@bpy.app.handlers.persistent
-def timer_update():
-    # this makes a first search after opening blender. showing latest assets.
-    global first_time
-    preferences = bpy.context.preferences.addons['blenderkit'].preferences
-    if first_time:
-        first_time = False
-        if preferences.show_on_start:
-            search()
-        if preferences.tips_on_start:
-            ui.get_largest_3dview()
-            ui.update_ui_size(ui.active_area, ui.active_region)
-            ui.add_report(text='BlenderKit Tip: ' + random.choice(rtips), timeout=12, color=colors.GREEN)
-
+def check_clipboard():
     # clipboard monitoring to search assets from web
     global last_clipboard
     if bpy.context.window_manager.clipboard != last_clipboard:
-        last_clipboard =  bpy.context.window_manager.clipboard
+        last_clipboard = bpy.context.window_manager.clipboard
         instr = 'asset_base_id:'
         # first check if contains asset id, then asset type
         if last_clipboard[:len(instr)] == instr:
             atstr = 'asset_type:'
             ati = last_clipboard.find(atstr)
-            #this only checks if the asset_type keyword is there but let's the keywords update function do the parsing.
+            # this only checks if the asset_type keyword is there but let's the keywords update function do the parsing.
             if ati > -1:
                 search_props = utils.get_search_props()
                 search_props.search_keywords = last_clipboard
                 # don't run search after this - assigning to keywords runs the search_update function.
 
+
+# @bpy.app.handlers.persistent
+def timer_update():
+    # this makes a first search after opening blender. showing latest assets.
+    global first_time
+    preferences = bpy.context.preferences.addons['blenderkit'].preferences
+    if first_time:  # first time
+        first_time = False
+        if preferences.show_on_start or preferences.first_run:
+            # TODO here it should check if there are some results, and only open assetbar if this is the case, not search.
+            # if bpy.context.scene.get('search results') is None:
+            search()
+            preferences.first_run = False
+        if preferences.tips_on_start:
+            ui.get_largest_3dview()
+            ui.update_ui_size(ui.active_area, ui.active_region)
+            ui.add_report(text='BlenderKit Tip: ' + random.choice(rtips), timeout=12, color=colors.GREEN)
+        return 3.0
+
+    check_clipboard()
+
     global search_threads
+    if len(search_threads) == 0:
+        return 1.0
     # don't do anything while dragging - this could switch asset during drag, and make results list length different,
     # causing a lot of throuble.
-    if len(search_threads) == 0 or bpy.context.scene.blenderkitUI.dragging:
-        return 1
+    if bpy.context.scene.blenderkitUI.dragging:
+        return 0.5
     for thread in search_threads:
         # TODO this doesn't check all processes when one gets removed,
         # but most of the time only one is running anyway
@@ -233,6 +243,9 @@ def timer_update():
                             if durl and tname:
 
                                 tooltip = generate_tooltip(r)
+                                # for some reason, the id was still int on some occurances. investigate this.
+                                r['author']['id'] = str(r['author']['id'])
+
                                 asset_data = {'thumbnail': tname,
                                               'thumbnail_small': small_tname,
                                               # 'thumbnails':allthumbs,
@@ -245,7 +258,7 @@ def timer_update():
                                               'tags': r['tags'],
                                               'can_download': r.get('canDownload', True),
                                               'verification_status': r['verificationStatus'],
-                                              'author_id': str(r['author']['id']),
+                                              'author_id': r['author']['id'],
                                               # 'author': r['author']['firstName'] + ' ' + r['author']['lastName']
                                               # 'description': r['description'],
                                               }
@@ -1199,7 +1212,7 @@ def search_update(self, context):
     ati = kwds.find(atstr)
     # if the asset type already isn't there it means this update function
     # was triggered by it's last iteration and needs to cancel
-    if idi>-1 and ati == -1:
+    if idi > -1 and ati == -1:
         return;
     if ati > -1:
         at = kwds[ati:].lower()
@@ -1285,7 +1298,7 @@ def register_search():
     for c in classes:
         bpy.utils.register_class(c)
 
-    bpy.app.timers.register(timer_update, persistent=True)
+    bpy.app.timers.register(timer_update)
 
     categories.load_categories()
 
