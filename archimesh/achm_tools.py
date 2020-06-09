@@ -174,13 +174,14 @@ def set_modifier_curve(myobject, mycurve):
 # --------------------------------------------------------------------
 # Add modifier (solidify)
 # --------------------------------------------------------------------
-def set_modifier_solidify(myobject, width):
+def set_modifier_solidify(myobject, width, offset=-1):
     bpy.context.view_layer.objects.active = myobject
     if bpy.context.view_layer.objects.active.name == myobject.name:
         bpy.ops.object.modifier_add(type='SOLIDIFY')
         for mod in myobject.modifiers:
             if mod.type == 'SOLIDIFY':
                 mod.thickness = width
+                mod.offset = offset
                 mod.use_even_offset = True
                 mod.use_quality_normals = True
                 break

@@ -120,6 +120,7 @@ class ARCHIMESH_OT_ExportRoom(Operator, ExportHelper):
             fout.write("baseboard=" + str(mydata.baseboard) + "\n")
             fout.write("baseh=" + str(round(mydata.base_height, 3)) + "\n")
             fout.write("baset=" + str(round(mydata.base_width, 3)) + "\n")
+            fout.write("based=" + str(round(mydata.base_double_sided, 3)) + "\n")
             # Shell
             fout.write("#\n# Wall Cover\n#\n")
             fout.write("shell=" + str(mydata.shell) + "\n")
@@ -232,6 +233,8 @@ class ARCHIMESH_OT_ImportRoom(Operator, ImportHelper):
                         mydata.base_height = float(line[6:-1])
                     elif "baset=" in line.lower():
                         mydata.base_width = float(line[6:-1])
+                    elif "based=" in line.lower():
+                        mydata.base_double_sided = float(line[6:-1])
                     elif "shell=" in line.lower():
                         if line[6:-4].upper() == "T":
                             mydata.shell = True
@@ -504,7 +507,15 @@ def shape_walls_and_create_children(myroom, tmp_mesh, update=False):
         create_walls(rp, baseboardmesh, get_blendunits(rp.base_height), True)
         set_normals(mybase, rp.inverse)  # inside/outside room
         if rp.base_width:
-            set_modifier_solidify(mybase, get_blendunits(rp.base_width))
+            if rp.base_double_sided:
+                bw = get_blendunits(rp.base_width)
+                ww = get_blendunits(rp.wall_width)
+                base_extra = bw - ww
+                base_width = bw + base_extra
+                offset = -1 + (2 * base_extra / base_width)
+                set_modifier_solidify(mybase, base_width, offset)
+            else:
+                set_modifier_solidify(mybase, get_blendunits(rp.base_width))
             # Move to Top SOLIDIFY
             movetotopsolidify(mybase)
         # Mark Seams
@@ -1536,6 +1547,10 @@ class RoomProperties(PropertyGroup):
             default=0.12, precision=3,
             description='Baseboard height', update=update_room,
             )
+    base_double_sided: BoolProperty(
+            name='Double-sided', description="Baseboard on both sides of the wall",
+            default=False, update=update_room,
+            )
 
     ceiling: BoolProperty(
             name="Ceiling", description="Create a ceiling",
@@ -1680,6 +1695,7 @@ class ARCHIMESH_PT_RoomGenerator(Panel):
                 row = box.row()
                 row.prop(room, 'base_width')
                 row.prop(room, 'base_height')
+                row.prop(room, 'base_double_sided')
 
             box = layout.box()
             box.prop(room, 'shell')
